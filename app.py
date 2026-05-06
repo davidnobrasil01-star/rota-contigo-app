@@ -629,12 +629,10 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     }
     """
 
-    sandbox_str = "true" if sandbox else "false"
     operations = (
         '{"query":"' + query.replace("\n", "\\n").replace('"', '\\"') + '",'
         '"variables":{'
         '"document":{"name":"' + nome_arquivo.replace(".pdf", "") + '",'
-        '"sandbox":' + sandbox_str + ','
         '"message":"Olá ' + nome_cliente.split()[0] + '! Segue o contrato da sua excursão com a Rota Contigo. Por favor, assine digitalmente clicando no botão abaixo."},'
         '"signers":[' + signer_input + ',' + signer_rota + '],'
         '"file":null}}'
