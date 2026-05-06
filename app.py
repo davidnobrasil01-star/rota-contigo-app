@@ -910,9 +910,16 @@ if submitted:
                             st.markdown("**📋 Links de assinatura:**")
 
                             for s in sigs:
-                                link = s.get("link", {}).get("short_link", "")
+                                link_obj = s.get("link") or {}
+                                link = link_obj.get("short_link", "")
                                 if link:
-                                    metodo = "📱 WhatsApp" if via_whatsapp and s["email"] == email.strip() else "📧 E-mail"
+                                    eh_cliente = s.get("email", "") == email.strip()
+                                    if eh_cliente and enviar_whatsapp:
+                                        metodo = "📱 WhatsApp"
+                                    elif eh_cliente:
+                                        metodo = "📧 E-mail"
+                                    else:
+                                        metodo = "📧 E-mail (Rota Contigo)"
                                     st.markdown(
                                         f"- **{s['name']}** — {metodo} enviado "
                                         f"| [Abrir link de assinatura]({link})"
