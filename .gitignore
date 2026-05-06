@@ -1,0 +1,15 @@
+# Nunca enviar ao GitHub — contém tokens/senhas
+.env
+*.env
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
