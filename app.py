@@ -571,26 +571,38 @@ def gerar_pdf(d: dict) -> bytes:
 
 def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
                       telefone_cliente: str, nome_arquivo: str, api_token: str,
-                      via_whatsapp: bool, sandbox: bool = False) -> dict:
+                      via_whatsapp: bool, via_email: bool = True,
+                      sandbox: bool = False) -> dict:
     """Envia o PDF para o Autentique e retorna link de assinatura."""
 
-    # Monta o signatário — David (você) + cliente
-    if via_whatsapp and telefone_cliente:
-        # Remove formatação do telefone e garante +55
+    # Normaliza telefone
+    tel = ""
+    if telefone_cliente:
         tel = "".join(filter(str.isdigit, telefone_cliente))
         if not tel.startswith("55"):
             tel = "55" + tel
         tel = "+" + tel
-        signer_input = (
+
+    # Monta signatário(s) do cliente
+    signers_cliente = []
+    if via_whatsapp and tel:
+        signers_cliente.append(
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
             f'"phone":"{tel}","delivery_method":"DELIVERY_METHOD_WHATSAPP",'
             f'"action":"SIGN"}}'
         )
-    else:
-        signer_input = (
+    if via_email:
+        signers_cliente.append(
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
             f'"action":"SIGN"}}'
         )
+    # Garante ao menos um signatário (fallback e-mail)
+    if not signers_cliente:
+        signers_cliente.append(
+            f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
+            f'"action":"SIGN"}}'
+        )
+    signer_input = ",".join(signers_cliente)
 
     # Signatário da Rota Contigo (você assina também)
     signer_rota = (
@@ -790,11 +802,24 @@ with st.form("contrato_form"):
                 placeholder="Cole aqui seu token do painel Autentique",
                 help="Painel Autentique → Configurações → API → Gerar Token"
             )
-        via_whatsapp = st.toggle("Enviar via WhatsApp (em vez de e-mail)", value=True)
-        if via_whatsapp:
-            st.info("📱 O cliente receberá uma mensagem no WhatsApp com o link para assinar.")
+        st.markdown("**Como notificar o cliente?**")
+        col_e, col_w = st.columns(2)
+        with col_e:
+            enviar_email     = st.toggle("📧 E-mail (R$0,013)", value=True)
+        with col_w:
+            enviar_whatsapp  = st.toggle("📱 WhatsApp (R$0,12)", value=False)
+
+        via_whatsapp = enviar_whatsapp  # usado na função de envio
+
+        if enviar_email and enviar_whatsapp:
+            st.info("📧📱 Cliente receberá por e-mail e WhatsApp.")
+        elif enviar_whatsapp:
+            st.info("📱 Cliente receberá pelo WhatsApp.")
+        elif enviar_email:
+            st.info("📧 Cliente receberá por e-mail.")
         else:
-            st.info("📧 O cliente receberá um e-mail com o link para assinar.")
+            st.warning("⚠️ Ative ao menos um canal de envio.")
+
         if modo_sandbox:
             st.warning("🧪 MODO TESTE ativo — documento não será cobrado (sandbox)")
 
@@ -871,7 +896,8 @@ if submitted:
                             telefone_cliente = celular.strip(),
                             nome_arquivo     = nome_arquivo,
                             api_token        = api_token.strip(),
-                            via_whatsapp     = via_whatsapp,
+                            via_whatsapp     = enviar_whatsapp,
+                            via_email        = enviar_email,
                             sandbox          = modo_sandbox,
                         )
 
