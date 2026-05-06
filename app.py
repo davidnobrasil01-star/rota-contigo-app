@@ -768,10 +768,11 @@ with st.form("contrato_form"):
     st.divider()
 
     # ── Envio Autentique (opcional) ───────────────────────────────────────
-    st.markdown("### ✍️ Enviar para Assinar (Autentique)")
-    st.caption("Opcional — preencha para enviar automaticamente ao cliente para assinar.")
-
-    usar_autentique = st.checkbox("Enviar contrato para assinatura digital via Autentique")
+    st.markdown("### ✍️ Assinatura Digital")
+    usar_autentique = st.checkbox(
+        "📲 Enviar para o cliente assinar pelo WhatsApp/e-mail (Autentique)",
+        value=True
+    )
 
     api_token   = ""
     via_whatsapp = False
