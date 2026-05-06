@@ -571,7 +571,7 @@ def gerar_pdf(d: dict) -> bytes:
 
 def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
                       telefone_cliente: str, nome_arquivo: str, api_token: str,
-                      via_whatsapp: bool) -> dict:
+                      via_whatsapp: bool, sandbox: bool = False) -> dict:
     """Envia o PDF para o Autentique e retorna link de assinatura."""
 
     # Monta o signatário — David (você) + cliente
@@ -617,10 +617,12 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     }
     """
 
+    sandbox_str = "true" if sandbox else "false"
     operations = (
         '{"query":"' + query.replace("\n", "\\n").replace('"', '\\"') + '",'
         '"variables":{'
         '"document":{"name":"' + nome_arquivo.replace(".pdf", "") + '",'
+        '"sandbox":' + sandbox_str + ','
         '"message":"Olá ' + nome_cliente.split()[0] + '! Segue o contrato da sua excursão com a Rota Contigo. Por favor, assine digitalmente clicando no botão abaixo."},'
         '"signers":[' + signer_input + ',' + signer_rota + '],'
         '"file":null}}'
@@ -774,11 +776,12 @@ with st.form("contrato_form"):
         value=True
     )
 
-    api_token   = ""
+    api_token    = ""
     via_whatsapp = False
+    modo_sandbox = True  # ← SANDBOX ATIVO: troque para False quando quiser cobrar
     if usar_autentique:
         if AUTENTIQUE_TOKEN_ENV:
-            st.success("🔑 Token Autentique carregado do arquivo .env")
+            st.success("🔑 Token Autentique carregado automaticamente")
             api_token = AUTENTIQUE_TOKEN_ENV
         else:
             api_token = st.text_input(
@@ -792,6 +795,8 @@ with st.form("contrato_form"):
             st.info("📱 O cliente receberá uma mensagem no WhatsApp com o link para assinar.")
         else:
             st.info("📧 O cliente receberá um e-mail com o link para assinar.")
+        if modo_sandbox:
+            st.warning("🧪 MODO TESTE ativo — documento não será cobrado (sandbox)")
 
     st.divider()
 
@@ -860,13 +865,14 @@ if submitted:
                 with st.spinner("📤 Enviando para o Autentique..."):
                     try:
                         resultado = enviar_autentique(
-                            pdf_bytes     = pdf_bytes,
-                            nome_cliente  = nome.strip(),
-                            email_cliente = email.strip(),
+                            pdf_bytes        = pdf_bytes,
+                            nome_cliente     = nome.strip(),
+                            email_cliente    = email.strip(),
                             telefone_cliente = celular.strip(),
-                            nome_arquivo  = nome_arquivo,
-                            api_token     = api_token.strip(),
-                            via_whatsapp  = via_whatsapp,
+                            nome_arquivo     = nome_arquivo,
+                            api_token        = api_token.strip(),
+                            via_whatsapp     = via_whatsapp,
+                            sandbox          = modo_sandbox,
                         )
 
                         if "errors" in resultado:
