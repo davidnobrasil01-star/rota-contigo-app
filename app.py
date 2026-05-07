@@ -595,8 +595,8 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     # Posições das assinaturas na última página:
     # y=63 acima | y=72 abaixo | y=66 = sobre as linhas horizontais
     # NAME removido: o nome já está impresso no contrato
-    pos_cliente = f'[{_pos(5, 70, ultima_pag)}]'
-    pos_rota    = f'[{_pos(55, 70, ultima_pag)}]'
+    pos_cliente = f'[{_pos(15, 70, ultima_pag)}]'
+    pos_rota    = f'[{_pos(65, 70, ultima_pag)}]'
 
     # Normaliza telefone
     tel = ""
