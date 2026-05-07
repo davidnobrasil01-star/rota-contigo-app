@@ -583,26 +583,21 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
             tel = "55" + tel
         tel = "+" + tel
 
-    # Monta signatário(s) do cliente
-    signers_cliente = []
+    # Monta signatário do cliente — UM único signatário com canal de entrega escolhido
+    # (API não aceita o mesmo e-mail duplicado)
     if via_whatsapp and tel:
-        signers_cliente.append(
+        # WhatsApp tem prioridade (inclui notificação via link no painel)
+        signer_input = (
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
             f'"phone":"{tel}","delivery_method":"DELIVERY_METHOD_WHATSAPP",'
             f'"action":"SIGN"}}'
         )
-    if via_email:
-        signers_cliente.append(
+    else:
+        # Só e-mail (sem delivery_method = padrão e-mail)
+        signer_input = (
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
             f'"action":"SIGN"}}'
         )
-    # Garante ao menos um signatário (fallback e-mail)
-    if not signers_cliente:
-        signers_cliente.append(
-            f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
-            f'"action":"SIGN"}}'
-        )
-    signer_input = ",".join(signers_cliente)
 
     # Signatário da Rota Contigo (você assina também)
     signer_rota = (
