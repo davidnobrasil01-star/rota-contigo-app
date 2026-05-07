@@ -611,15 +611,17 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
             tel = "55" + tel
         tel = "+" + tel
 
-    # Monta signatário do cliente — UM único signatário com canal de entrega escolhido
-    # (API não aceita o mesmo e-mail duplicado)
+    # Monta signatário do cliente
+    # IMPORTANTE: a API Autentique aceita SOMENTE email OU phone, nunca ambos
     if via_whatsapp and tel:
+        # WhatsApp: envia só o telefone (sem email)
         signer_input = (
-            f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
+            f'{{"name":"{nome_cliente}",'
             f'"phone":"{tel}","delivery_method":"DELIVERY_METHOD_WHATSAPP",'
             f'"positions":{pos_cliente},"action":"SIGN"}}'
         )
     else:
+        # E-mail: envia só o email (sem telefone)
         signer_input = (
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
             f'"positions":{pos_cliente},"action":"SIGN"}}'
