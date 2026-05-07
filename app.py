@@ -664,6 +664,7 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     files = [("file", (nome_arquivo, pdf_bytes, "application/pdf"))]
     headers = {"Authorization": f"Bearer {api_token}"}
 
+    # 1️⃣ Cria o documento
     resp = requests.post(
         "https://api.autentique.com.br/v2/graphql",
         headers=headers,
@@ -671,7 +672,33 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
         files=files,
         timeout=30,
     )
-    return resp.json()
+    resultado = resp.json()
+
+    # 2️⃣ Assina automaticamente como Rota Contigo
+    try:
+        sigs = resultado["data"]["createDocument"]["signatures"]
+        # Encontra o public_id da assinatura da Rota Contigo
+        public_id_empresa = next(
+            (s["public_id"] for s in sigs
+             if "rotacontigoturismo" in (s.get("email") or "")),
+            None
+        )
+        if public_id_empresa:
+            sign_query = (
+                '{"query":"mutation { signDocument(id: \\"'
+                + public_id_empresa
+                + '\\") { public_id signed } }"}'
+            )
+            requests.post(
+                "https://api.autentique.com.br/v2/graphql",
+                headers={**headers, "Content-Type": "application/json"},
+                data=sign_query,
+                timeout=15,
+            )
+    except Exception:
+        pass  # Não bloqueia o fluxo se a auto-assinatura falhar
+
+    return resultado
 
 
 # ══════════════════════════════════════════════════════════════════════════════
