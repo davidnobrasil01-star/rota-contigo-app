@@ -593,10 +593,10 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     ultima_pag = _contar_paginas(pdf_bytes)
 
     # Posições das assinaturas na última página:
-    # y=63 acima | y=72 abaixo | y=66 = sobre as linhas horizontais
-    # NAME removido: o nome já está impresso no contrato
-    pos_cliente = f'[{_pos(15, 70, ultima_pag)}]'
-    pos_rota    = f'[{_pos(65, 70, ultima_pag)}]'
+    # Layout do PDF: coluna ESQUERDA (x=15) = ROTA CONTIGO, coluna DIREITA (x=65) = CLIENTE
+    # y=70 = sobre as linhas horizontais de assinatura
+    pos_rota    = f'[{_pos(15, 70, ultima_pag)}]'   # ESQUERDA = Rota Contigo
+    pos_cliente = f'[{_pos(65, 70, ultima_pag)}]'   # DIREITA  = Cliente
 
     # Normaliza telefone
     tel = ""
@@ -623,9 +623,11 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
         )
 
     # Signatário da Rota Contigo
+    # IMPORTANTE: usar o email da conta vinculada ao token da API (davidnobrasil01@gmail.com)
+    # para que signDocument possa assinar automaticamente
     signer_rota = (
         f'{{"name":"David Cortés – Rota Contigo",'
-        f'"email":"rotacontigoturismo@gmail.com",'
+        f'"email":"davidnobrasil01@gmail.com",'
         f'"positions":{pos_rota},"action":"SIGN"}}'
     )
 
@@ -674,25 +676,16 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     )
     resultado = resp.json()
 
-    # 2️⃣ Assina automaticamente como Rota Contigo
+    # 2️⃣ Assina automaticamente como Rota Contigo (usando ID do documento)
+    # signDocument assina com a conta vinculada ao token (davidnobrasil01@gmail.com)
+    # e retorna Boolean — sem sub-seleção
     try:
-        sigs = resultado["data"]["createDocument"]["signatures"]
-        # Encontra o public_id da assinatura da Rota Contigo
-        public_id_empresa = next(
-            (s["public_id"] for s in sigs
-             if "rotacontigoturismo" in (s.get("email") or "")),
-            None
-        )
-        if public_id_empresa:
-            sign_query = (
-                '{"query":"mutation { signDocument(id: \\"'
-                + public_id_empresa
-                + '\\") { public_id signed } }"}'
-            )
+        doc_id = resultado["data"]["createDocument"]["id"]
+        if doc_id:
             requests.post(
                 "https://api.autentique.com.br/v2/graphql",
                 headers={**headers, "Content-Type": "application/json"},
-                data=sign_query,
+                json={"query": f'mutation {{ signDocument(id: "{doc_id}") }}'},
                 timeout=15,
             )
     except Exception:
