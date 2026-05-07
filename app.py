@@ -593,14 +593,14 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     ultima_pag = _contar_paginas(pdf_bytes)
 
     # Posições das assinaturas na última página:
-    # y menor = mais acima na página | y=63 = em cima das linhas de assinatura
+    # y=63 ficou acima das linhas; y=76 ficou abaixo → y=72 = sobre as linhas
     pos_cliente = (
-        f'[{_pos(5, 63, ultima_pag)},'
-        f'{_pos(5, 70, ultima_pag, "NAME")}]'
+        f'[{_pos(5, 72, ultima_pag)},'
+        f'{_pos(5, 79, ultima_pag, "NAME")}]'
     )
     pos_rota = (
-        f'[{_pos(55, 63, ultima_pag)},'
-        f'{_pos(55, 70, ultima_pag, "NAME")}]'
+        f'[{_pos(55, 72, ultima_pag)},'
+        f'{_pos(55, 79, ultima_pag, "NAME")}]'
     )
 
     # Normaliza telefone
