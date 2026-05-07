@@ -569,11 +569,40 @@ def gerar_pdf(d: dict) -> bytes:
 # INTEGRAÇÃO AUTENTIQUE
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _contar_paginas(pdf_bytes: bytes) -> int:
+    """Conta o número de páginas do PDF."""
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(io.BytesIO(pdf_bytes)).pages)
+    except Exception:
+        return 2  # fallback seguro
+
+
+def _pos(x: float, y: float, pagina: int, elemento: str = "SIGNATURE") -> str:
+    """Formata um objeto de posição para o Autentique."""
+    return f'{{"x":"{x}","y":"{y}","z":{pagina},"element":"{elemento}"}}'
+
+
 def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
                       telefone_cliente: str, nome_arquivo: str, api_token: str,
                       via_whatsapp: bool, via_email: bool = True,
                       sandbox: bool = False) -> dict:
     """Envia o PDF para o Autentique e retorna link de assinatura."""
+
+    # Detecta última página (onde ficam as linhas de assinatura)
+    ultima_pag = _contar_paginas(pdf_bytes)
+
+    # Posições das assinaturas na última página:
+    # Cliente: lado esquerdo (x≈5%, y≈76%)
+    # Rota Contigo: lado direito (x≈55%, y≈76%)
+    pos_cliente = (
+        f'[{_pos(5, 76, ultima_pag)},'
+        f'{_pos(5, 82, ultima_pag, "NAME")}]'
+    )
+    pos_rota = (
+        f'[{_pos(55, 76, ultima_pag)},'
+        f'{_pos(55, 82, ultima_pag, "NAME")}]'
+    )
 
     # Normaliza telefone
     tel = ""
@@ -586,23 +615,22 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
     # Monta signatário do cliente — UM único signatário com canal de entrega escolhido
     # (API não aceita o mesmo e-mail duplicado)
     if via_whatsapp and tel:
-        # WhatsApp tem prioridade (inclui notificação via link no painel)
         signer_input = (
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
             f'"phone":"{tel}","delivery_method":"DELIVERY_METHOD_WHATSAPP",'
-            f'"action":"SIGN"}}'
+            f'"positions":{pos_cliente},"action":"SIGN"}}'
         )
     else:
-        # Só e-mail (sem delivery_method = padrão e-mail)
         signer_input = (
             f'{{"name":"{nome_cliente}","email":"{email_cliente}",'
-            f'"action":"SIGN"}}'
+            f'"positions":{pos_cliente},"action":"SIGN"}}'
         )
 
-    # Signatário da Rota Contigo (você assina também)
+    # Signatário da Rota Contigo
     signer_rota = (
-        '{"name":"David Cortés – Rota Contigo",'
-        '"email":"rotacontigoturismo@gmail.com","action":"SIGN"}'
+        f'{{"name":"David Cortés – Rota Contigo",'
+        f'"email":"rotacontigoturismo@gmail.com",'
+        f'"positions":{pos_rota},"action":"SIGN"}}'
     )
 
     query = """
