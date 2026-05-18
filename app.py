@@ -901,8 +901,6 @@ with st.form("contrato_form"):
         else:
             st.warning("⚠️ Ative ao menos um canal de envio.")
 
-        if modo_sandbox:
-            st.warning("🧪 MODO TESTE ativo — documento não será cobrado (sandbox)")
 
     st.divider()
 
