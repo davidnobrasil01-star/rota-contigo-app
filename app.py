@@ -598,7 +598,14 @@ def gerar_pdf(d: dict) -> bytes:
         "CADASTUR Regular – Válido até 10/02/2028  |  rotacontigoturismo@gmail.com  |  "
         "(41) 99819-5099", RODAPE))
 
-    doc.build(story)
+    def _num_pagina(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#aaaaaa"))
+        canvas.drawRightString(A4[0] - 2.5*cm, 1.1*cm, str(canvas.getPageNumber()))
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_num_pagina, onLaterPages=_num_pagina)
     return buffer.getvalue()
 
 
