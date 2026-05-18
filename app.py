@@ -667,11 +667,11 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
         )
 
     # Signatário da Rota Contigo
-    # Usa rotacontigoturismo@gmail.com como segundo signatário.
-    # O auto-sign via signDocument tentará assinar se o token tiver permissão.
+    # IMPORTANTE: usar o email da conta vinculada ao token da API
+    # para que signDocument possa assinar automaticamente
     signer_rota = (
-        f'{{"name":"Rota Contigo – David Cortés",'
-        f'"email":"rotacontigoturismo@gmail.com",'
+        f'{{"name":"David Cortés – Rota Contigo",'
+        f'"email":"davidcorteshernandez945@gmail.com",'
         f'"positions":{pos_rota},"action":"SIGN"}}'
     )
 
