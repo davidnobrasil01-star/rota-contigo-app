@@ -601,7 +601,7 @@ def gerar_pdf(d: dict) -> bytes:
     def _num_pagina(canvas, doc):
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(colors.HexColor("#aaaaaa"))
+        canvas.setFillColor(colors.HexColor("#555555"))
         canvas.drawRightString(A4[0] - 2.5*cm, 1.1*cm, str(canvas.getPageNumber()))
         canvas.restoreState()
 
