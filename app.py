@@ -495,30 +495,64 @@ def gerar_pdf(d: dict) -> bytes:
     ]:
         story.append(Paragraph(item, CAMPO))
 
+    # ── Autorização de Imagem ──────────────────────────────────────────────
+    story.append(Paragraph("DA AUTORIZAÇÃO DE USO DE IMAGEM E TRATAMENTO DE DADOS PESSOAIS (LGPD)", SECAO))
+    story.append(hr(colors.HexColor("#aaaaaa"), 0.5))
+
+    story.append(Paragraph("Cláusula 17ª – DA AUTORIZAÇÃO DE USO DE IMAGEM", CL_TIT))
+    story.append(Paragraph(
+        "O(A) CONTRATANTE autoriza, de forma livre, expressa, inequívoca e informada, a empresa "
+        "<b>ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA</b>, inscrita no CNPJ sob nº "
+        "<b>65.050.169/0001-00</b>, a realizar a captação de fotografias, vídeos, áudios e "
+        "demais registros audiovisuais contendo sua imagem, voz e nome durante a participação "
+        "em viagens, eventos, excursões ou quaisquer atividades promovidas pela CONTRATADA.",
+        CORPO))
+    story.append(Paragraph(
+        "<b>§1º</b> – A autorização prevista nesta cláusula compreende o direito de utilizar, "
+        "reproduzir, editar, publicar, divulgar e veicular as imagens e gravações captadas, "
+        "para fins institucionais, promocionais, publicitários e comerciais, em quaisquer meios "
+        "de comunicação, físicos ou digitais, incluindo, mas não se limitando a redes sociais, "
+        "websites, anúncios, campanhas publicitárias, materiais impressos e plataformas "
+        "eletrônicas.", CORPO))
+    story.append(Paragraph(
+        "<b>§2º</b> – O(A) CONTRATANTE declara estar ciente de que o tratamento de seus dados "
+        "pessoais e de imagem será realizado em conformidade com a Lei nº 13.709/2018 – "
+        "Lei Geral de Proteção de Dados Pessoais (LGPD), observando-se os princípios da "
+        "finalidade, necessidade, adequação e segurança das informações.", CORPO))
+    story.append(Paragraph(
+        "<b>§3º</b> – A presente autorização é concedida em caráter gratuito, sem qualquer "
+        "ônus para a CONTRATADA, não cabendo ao(à) CONTRATANTE qualquer tipo de remuneração, "
+        "indenização ou compensação futura pelo uso das imagens e conteúdos captados.", CORPO))
+    story.append(Paragraph(
+        "<b>§4º</b> – A autorização prevista nesta cláusula vigorará por prazo indeterminado, "
+        "podendo ser revogada pelo(a) CONTRATANTE mediante solicitação formal e expressa, por "
+        "escrito, ficando resguardadas as utilizações e divulgações realizadas anteriormente à "
+        "data do recebimento da revogação.", CORPO))
+
     # ── Disposições Gerais ─────────────────────────────────────────────────
     story.append(Paragraph("DISPOSIÇÕES GERAIS E VIGÊNCIA", SECAO))
     story.append(hr(colors.HexColor("#aaaaaa"), 0.5))
 
-    story.append(Paragraph("Cláusula 17ª – DA VIGÊNCIA", CL_TIT))
+    story.append(Paragraph("Cláusula 18ª – DA VIGÊNCIA", CL_TIT))
     story.append(Paragraph(
         "Este contrato entra em vigor na data da assinatura ou confirmação do pagamento "
         "(o que ocorrer primeiro), e tem vigência até a conclusão dos serviços contratados.",
         CORPO))
 
-    story.append(Paragraph("Cláusula 18ª – DO FORO", CL_TIT))
+    story.append(Paragraph("Cláusula 19ª – DO FORO", CL_TIT))
     story.append(Paragraph(
         "Fica eleito o foro da Comarca de <b>Curitiba – PR</b> para dirimir quaisquer "
         "controvérsias oriundas deste contrato, com renúncia a qualquer outro, por mais "
         "privilegiado que seja (art. 63 do CPC).", CORPO))
 
-    story.append(Paragraph("Cláusula 19ª – DA VALIDADE DIGITAL", CL_TIT))
+    story.append(Paragraph("Cláusula 20ª – DA VALIDADE DIGITAL", CL_TIT))
     story.append(Paragraph(
         "Este contrato tem plena validade jurídica em formato digital, nos termos da MP "
         "nº 2.200-2/2001, do Marco Civil da Internet (Lei nº 12.965/2014) e do CDC. "
         "Sua aceitação ocorre mediante confirmação de pagamento ou assinatura eletrônica.",
         CORPO))
 
-    story.append(Paragraph("Cláusula 20ª – DA LEGISLAÇÃO APLICÁVEL", CL_TIT))
+    story.append(Paragraph("Cláusula 21ª – DA LEGISLAÇÃO APLICÁVEL", CL_TIT))
     story.append(Paragraph(
         "Este contrato é regido pelas seguintes normas: Código Civil (Lei 10.406/2002), "
         "Código de Defesa do Consumidor (Lei 8.078/1990), Lei Geral do Turismo "
