@@ -445,9 +445,6 @@ def gerar_pdf(d: dict) -> bytes:
         "do evento.", CORPO))
 
     # ── Política de Cancelamento ───────────────────────────────────────────
-    story.append(Paragraph("POLÍTICA DE CANCELAMENTO DO CONTRATANTE", SECAO))
-    story.append(hr(colors.HexColor("#aaaaaa"), 0.5))
-
     reemb = [
         ["Antecedência da desistência",                "% Restituído"],
         ["Mais de 31 dias antes da viagem",             "90% do valor pago"],
@@ -471,6 +468,8 @@ def gerar_pdf(d: dict) -> bytes:
         ("LEFTPADDING",   (0,0), (-1,-1), 6),
     ]))
     story.append(KeepTogether([
+        Paragraph("POLÍTICA DE CANCELAMENTO DO CONTRATANTE", SECAO),
+        hr(colors.HexColor("#aaaaaa"), 0.5),
         Paragraph("Cláusula 15ª", CL_TIT),
         Paragraph(
             "Em caso de desistência pelo CONTRATANTE, aplicam-se os percentuais abaixo, "
@@ -531,14 +530,15 @@ def gerar_pdf(d: dict) -> bytes:
         "data do recebimento da revogação.", CORPO))
 
     # ── Disposições Gerais ─────────────────────────────────────────────────
-    story.append(Paragraph("DISPOSIÇÕES GERAIS E VIGÊNCIA", SECAO))
-    story.append(hr(colors.HexColor("#aaaaaa"), 0.5))
-
-    story.append(Paragraph("Cláusula 18ª – DA VIGÊNCIA", CL_TIT))
-    story.append(Paragraph(
-        "Este contrato entra em vigor na data da assinatura ou confirmação do pagamento "
-        "(o que ocorrer primeiro), e tem vigência até a conclusão dos serviços contratados.",
-        CORPO))
+    story.append(KeepTogether([
+        Paragraph("DISPOSIÇÕES GERAIS E VIGÊNCIA", SECAO),
+        hr(colors.HexColor("#aaaaaa"), 0.5),
+        Paragraph("Cláusula 18ª – DA VIGÊNCIA", CL_TIT),
+        Paragraph(
+            "Este contrato entra em vigor na data da assinatura ou confirmação do pagamento "
+            "(o que ocorrer primeiro), e tem vigência até a conclusão dos serviços contratados.",
+            CORPO),
+    ]))
 
     story.append(KeepTogether([
         Paragraph("Cláusula 19ª – DO FORO", CL_TIT),
