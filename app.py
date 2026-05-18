@@ -540,11 +540,13 @@ def gerar_pdf(d: dict) -> bytes:
         "(o que ocorrer primeiro), e tem vigência até a conclusão dos serviços contratados.",
         CORPO))
 
-    story.append(Paragraph("Cláusula 19ª – DO FORO", CL_TIT))
-    story.append(Paragraph(
-        "Fica eleito o foro da Comarca de <b>Curitiba – PR</b> para dirimir quaisquer "
-        "controvérsias oriundas deste contrato, com renúncia a qualquer outro, por mais "
-        "privilegiado que seja (art. 63 do CPC).", CORPO))
+    story.append(KeepTogether([
+        Paragraph("Cláusula 19ª – DO FORO", CL_TIT),
+        Paragraph(
+            "Fica eleito o foro da Comarca de <b>Curitiba – PR</b> para dirimir quaisquer "
+            "controvérsias oriundas deste contrato, com renúncia a qualquer outro, por mais "
+            "privilegiado que seja (art. 63 do CPC).", CORPO),
+    ]))
 
     story.append(Paragraph("Cláusula 20ª – DA VALIDADE DIGITAL", CL_TIT))
     story.append(Paragraph(
