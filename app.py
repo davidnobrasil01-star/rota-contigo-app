@@ -271,9 +271,6 @@ def gerar_pdf(d: dict) -> bytes:
     ]))
 
     # ── Obrigações da Contratada ───────────────────────────────────────────
-    story.append(Paragraph("OBRIGAÇÕES DA CONTRATADA", SECAO))
-    story.append(hr(colors.HexColor("#aaaaaa"), 0.5))
-
     story.append(Paragraph("Cláusula 2ª – DOS SERVIÇOS", CL_TIT))
     story.append(Paragraph(
         "A CONTRATADA compromete-se a prestar seus serviços com qualidade, segurança e "
