@@ -271,12 +271,16 @@ def gerar_pdf(d: dict) -> bytes:
     ]))
 
     # ── Obrigações da Contratada ───────────────────────────────────────────
-    story.append(Paragraph("Cláusula 2ª – DOS SERVIÇOS", CL_TIT))
-    story.append(Paragraph(
-        "A CONTRATADA compromete-se a prestar seus serviços com qualidade, segurança e "
-        "pontualidade, em conformidade com o Código de Defesa do Consumidor "
-        "(Lei nº 8.078/1990), a Lei Geral do Turismo (Lei nº 11.771/2008) e demais "
-        "normas aplicáveis.", CORPO))
+    story.append(KeepTogether([
+        Paragraph("OBRIGAÇÕES DA CONTRATADA", SECAO),
+        hr(colors.HexColor("#aaaaaa"), 0.5),
+        Paragraph("Cláusula 2ª – DOS SERVIÇOS", CL_TIT),
+        Paragraph(
+            "A CONTRATADA compromete-se a prestar seus serviços com qualidade, segurança e "
+            "pontualidade, em conformidade com o Código de Defesa do Consumidor "
+            "(Lei nº 8.078/1990), a Lei Geral do Turismo (Lei nº 11.771/2008) e demais "
+            "normas aplicáveis.", CORPO),
+    ]))
 
     story.append(Paragraph("Cláusula 3ª – DOS VEÍCULOS E TRANSPORTE", CL_TIT))
     story.append(Paragraph(
