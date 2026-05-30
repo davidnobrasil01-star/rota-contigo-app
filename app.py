@@ -16,7 +16,7 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
                                 HRFlowable, Table, TableStyle,
-                                Image as RLImage, KeepTogether)
+                                Image as RLImage, KeepTogether, PageBreak)
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 
 # ── Token Autentique ──────────────────────────────────────────────────────────
@@ -563,7 +563,10 @@ def gerar_pdf(d: dict) -> bytes:
         CORPO))
 
     # ── Assinaturas ────────────────────────────────────────────────────────
-    story.append(sp(14))
+    # PageBreak garante que as assinaturas SEMPRE ficam na mesma posição
+    # (y≈28% do topo), independente da quantidade de acompanhantes.
+    story.append(PageBreak())
+    story.append(sp(160))   # espaço calibrado para posicionar a assinatura em y≈28%
     story.append(hr(VERDE, 1))
     story.append(sp(12))
 
