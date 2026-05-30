@@ -9,6 +9,7 @@ import os
 import requests
 import streamlit as st
 from datetime import date
+from reportlab.pdfgen import canvas as rl_canvas
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -601,14 +602,33 @@ def gerar_pdf(d: dict) -> bytes:
         "CADASTUR Regular – Válido até 10/02/2028  |  rotacontigoturismo@gmail.com  |  "
         "(41) 99819-5099", RODAPE))
 
-    def _num_pagina(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(colors.HexColor("#555555"))
-        canvas.drawRightString(A4[0] - 2.5*cm, 1.1*cm, str(canvas.getPageNumber()))
-        canvas.restoreState()
+    class _PaginaCanvas(rl_canvas.Canvas):
+        """Canvas com duas passagens para exibir 'Página X de Y'."""
+        def __init__(self, *args, **kwargs):
+            rl_canvas.Canvas.__init__(self, *args, **kwargs)
+            self._estados = []
 
-    doc.build(story, onFirstPage=_num_pagina, onLaterPages=_num_pagina)
+        def showPage(self):
+            self._estados.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._estados)
+            for estado in self._estados:
+                self.__dict__.update(estado)
+                self._desenhar_numero(total)
+                rl_canvas.Canvas.showPage(self)
+            rl_canvas.Canvas.save(self)
+
+        def _desenhar_numero(self, total):
+            self.saveState()
+            self.setFont("Helvetica", 7)
+            self.setFillColor(colors.HexColor("#555555"))
+            texto = f"Página {self._pageNumber} de {total}"
+            self.drawRightString(A4[0] - 2.5*cm, 1.1*cm, texto)
+            self.restoreState()
+
+    doc.build(story, canvasmaker=_PaginaCanvas)
     return buffer.getvalue()
 
 
