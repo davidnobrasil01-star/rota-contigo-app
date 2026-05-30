@@ -566,7 +566,7 @@ def gerar_pdf(d: dict) -> bytes:
     # PageBreak garante que as assinaturas SEMPRE ficam na mesma posição
     # (y≈28% do topo), independente da quantidade de acompanhantes.
     story.append(PageBreak())
-    story.append(sp(160))   # espaço calibrado para posicionar a assinatura em y≈28%
+    story.append(sp(146))   # espaço calibrado para posicionar a assinatura em y≈26%
     story.append(hr(VERDE, 1))
     story.append(sp(12))
 
