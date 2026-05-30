@@ -751,6 +751,44 @@ st.set_page_config(
     layout="centered",
 )
 
+# ── Proteção por senha ────────────────────────────────────────────────────────
+def _checar_senha() -> bool:
+    """Retorna True se o usuário já está autenticado."""
+    try:
+        senha_correta = st.secrets["APP_PASSWORD"]
+    except Exception:
+        return True  # sem secret configurado → acesso livre (dev local)
+
+    if st.session_state.get("autenticado"):
+        return True
+
+    st.markdown(
+        "<div style='text-align:center;padding:2rem 0'>"
+        "<img src='https://raw.githubusercontent.com/davidnobrasil01-star/"
+        "rota-contigo-app/main/logo.png' width='160'><br><br>"
+        "<h3 style='color:#1a5c38'>🔒 Acesso Restrito</h3>"
+        "<p style='color:#555'>Rota Contigo – Gerador de Contratos</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    with st.form("login_form"):
+        senha = st.text_input("Senha", type="password", placeholder="Digite a senha de acesso")
+        entrar = st.form_submit_button("Entrar", use_container_width=True, type="primary")
+
+    if entrar:
+        if senha == senha_correta:
+            st.session_state["autenticado"] = True
+            st.rerun()
+        else:
+            st.error("❌ Senha incorreta. Tente novamente.")
+
+    return False
+
+if not _checar_senha():
+    st.stop()
+
+# ── App principal (só chega aqui quem passou pela senha) ──────────────────────
 st.markdown(
     "<h2 style='color:#1a5c38;text-align:center'>🚌 Rota Contigo</h2>"
     "<p style='text-align:center;color:#777;margin-top:-10px'>"
