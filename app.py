@@ -20,6 +20,15 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
                                 Image as RLImage, KeepTogether, PageBreak)
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 
+# set_page_config precisa ser o primeiro comando Streamlit executado — antes
+# de qualquer acesso a st.secrets, senão o aviso de "secrets não encontrados"
+# quebra a regra de "primeiro comando" e a página derruba com StreamlitAPIException.
+st.set_page_config(
+    page_title="Rota Contigo – Contrato",
+    page_icon="🚌",
+    layout="centered",
+)
+
 # ── Token Autentique ──────────────────────────────────────────────────────────
 # Prioridade: (1) .env local, (2) Streamlit Secrets (nuvem), (3) campo manual
 try:
@@ -79,21 +88,36 @@ def fmt_valor(v: float) -> str:
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# GERAÇÃO DO PDF
-# ══════════════════════════════════════════════════════════════════════════════
+class _PaginaCanvas(rl_canvas.Canvas):
+    """Canvas com duas passagens para exibir 'Página X de Y'."""
+    def __init__(self, *args, **kwargs):
+        rl_canvas.Canvas.__init__(self, *args, **kwargs)
+        self._estados = []
 
-def gerar_pdf(d: dict) -> bytes:
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        rightMargin=2.5*cm, leftMargin=2.5*cm,
-        topMargin=2*cm, bottomMargin=2*cm,
-    )
-    story = []
-    story.append(sp(2))
+    def showPage(self):
+        self._estados.append(dict(self.__dict__))
+        self._startPage()
 
-    # ── Cabeçalho ──────────────────────────────────────────────────────────
+    def save(self):
+        total = len(self._estados)
+        for estado in self._estados:
+            self.__dict__.update(estado)
+            self._desenhar_numero(total)
+            rl_canvas.Canvas.showPage(self)
+        rl_canvas.Canvas.save(self)
+
+    def _desenhar_numero(self, total):
+        self.saveState()
+        self.setFont("Helvetica", 7)
+        self.setFillColor(colors.HexColor("#555555"))
+        texto = f"Página {self._pageNumber} de {total}"
+        self.drawRightString(A4[0] - 2.5*cm, 1.1*cm, texto)
+        self.restoreState()
+
+
+def _cabecalho() -> list:
+    """Monta o cabeçalho (logo + dados da agência + badge CADASTUR), comum a todos os documentos."""
+    elementos = []
     try:
         logo = RLImage(LOGO_PATH, width=5*cm, height=2*cm)
     except Exception:
@@ -116,10 +140,10 @@ def gerar_pdf(d: dict) -> bytes:
         ("LEFTPADDING",  (0,0), (-1,-1), 0),
         ("RIGHTPADDING", (0,0), (-1,-1), 0),
     ]))
-    story.append(cab_t)
-    story.append(sp(3))
-    story.append(hr(VERDE, 2))
-    story.append(sp(2))
+    elementos.append(cab_t)
+    elementos.append(sp(3))
+    elementos.append(hr(VERDE, 2))
+    elementos.append(sp(2))
 
     badge_t = Table(
         [["  CADASTUR REGULAR  |  Validade: 10/02/2026 a 10/02/2028  |  www.cadastur.turismo.gov.br"]],
@@ -133,8 +157,27 @@ def gerar_pdf(d: dict) -> bytes:
         ("TOPPADDING",    (0,0), (-1,-1), 5),
         ("BOTTOMPADDING", (0,0), (-1,-1), 5),
     ]))
-    story.append(badge_t)
-    story.append(sp(3))
+    elementos.append(badge_t)
+    elementos.append(sp(3))
+    return elementos
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GERAÇÃO DO PDF
+# ══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf(d: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=2.5*cm, leftMargin=2.5*cm,
+        topMargin=2*cm, bottomMargin=2*cm,
+    )
+    story = []
+    story.append(sp(2))
+
+    # ── Cabeçalho ──────────────────────────────────────────────────────────
+    story.extend(_cabecalho())
 
     story.append(Paragraph("CONTRATO DE PRESTAÇÃO DE SERVIÇOS TURÍSTICOS", SECAO))
     story.append(hr(VERDE, 0.5))
@@ -552,8 +595,10 @@ def gerar_pdf(d: dict) -> bytes:
     story.append(Paragraph("Cláusula 20ª – DA VALIDADE DIGITAL", CL_TIT))
     story.append(Paragraph(
         "Este contrato tem plena validade jurídica em formato digital, nos termos da MP "
-        "nº 2.200-2/2001, do Marco Civil da Internet (Lei nº 12.965/2014) e do CDC. "
-        "Sua aceitação ocorre mediante confirmação de pagamento ou assinatura eletrônica.",
+        "nº 2.200-2/2001, da Lei nº 14.063/2020 (assinaturas eletrônicas em interações "
+        "com entes públicos e entre particulares), do Marco Civil da Internet (Lei nº "
+        "12.965/2014) e do CDC. Sua aceitação ocorre mediante confirmação de pagamento "
+        "ou assinatura eletrônica.",
         CORPO))
 
     story.append(Paragraph("Cláusula 21ª – DA LEGISLAÇÃO APLICÁVEL", CL_TIT))
@@ -602,31 +647,614 @@ def gerar_pdf(d: dict) -> bytes:
         "CADASTUR Regular – Válido até 10/02/2028  |  rotacontigoturismo@gmail.com  |  "
         "(41) 99819-5099", RODAPE))
 
-    class _PaginaCanvas(rl_canvas.Canvas):
-        """Canvas com duas passagens para exibir 'Página X de Y'."""
-        def __init__(self, *args, **kwargs):
-            rl_canvas.Canvas.__init__(self, *args, **kwargs)
-            self._estados = []
+    doc.build(story, canvasmaker=_PaginaCanvas)
+    return buffer.getvalue()
 
-        def showPage(self):
-            self._estados.append(dict(self.__dict__))
-            self._startPage()
 
-        def save(self):
-            total = len(self._estados)
-            for estado in self._estados:
-                self.__dict__.update(estado)
-                self._desenhar_numero(total)
-                rl_canvas.Canvas.showPage(self)
-            rl_canvas.Canvas.save(self)
+# ══════════════════════════════════════════════════════════════════════════════
+# GERAÇÃO DO PDF — TERMO DE INTERMEDIAÇÃO DE PASSAGEM AÉREA
+# ══════════════════════════════════════════════════════════════════════════════
 
-        def _desenhar_numero(self, total):
-            self.saveState()
-            self.setFont("Helvetica", 7)
-            self.setFillColor(colors.HexColor("#555555"))
-            texto = f"Página {self._pageNumber} de {total}"
-            self.drawRightString(A4[0] - 2.5*cm, 1.1*cm, texto)
-            self.restoreState()
+def gerar_pdf_passagem(d: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=2.5*cm, leftMargin=2.5*cm,
+        topMargin=2*cm, bottomMargin=2*cm,
+    )
+    story = []
+    story.append(sp(2))
+
+    # ── Cabeçalho ──────────────────────────────────────────────────────────
+    story.extend(_cabecalho())
+
+    story.append(Paragraph("TERMO DE INTERMEDIAÇÃO PARA EMISSÃO DE PASSAGEM AÉREA", SECAO))
+    story.append(hr(VERDE, 0.5))
+
+    story.append(Paragraph("Cláusula 1ª – DO OBJETO E DAS PARTES", CL_TIT))
+    story.append(Paragraph(
+        "O presente termo tem como objeto a intermediação, pela <b>ROTA CONTIGO AGENCIA "
+        "DE VIAGENS E TURISMO LTDA</b>, inscrita no CNPJ/CADASTUR sob nº "
+        "<b>65.050.169/0001-00</b>, com sede em Curitiba – PR, operando exclusivamente "
+        "de forma digital, e-mail: rotacontigoturismo@gmail.com, telefone: "
+        "(41) 99819-5099, doravante denominada <b>CONTRATADA</b>, para emissão de "
+        "passagem(ns) aérea(s) junto à(s) companhia(s) aérea(s) e/ou consolidadora(s) de "
+        "viagens, em nome e por conta do(a) <b>CONTRATANTE/PASSAGEIRO</b> identificado(a) "
+        "abaixo:", CORPO))
+
+    story.append(sp(2))
+    story.append(Paragraph("<b>DADOS DO(A) CONTRATANTE / PASSAGEIRO:</b>", CAMPO))
+    story.append(Paragraph(f"Nome completo: <b>{d['nome']}</b>", CAMPO))
+    story.append(Paragraph(f"Data de Nascimento: <b>{fmt_data(d['nascimento'])}</b>", CAMPO))
+    story.append(Paragraph(f"CPF: <b>{d['cpf']}</b>    RG: <b>{d['rg']}</b>", CAMPO))
+    story.append(Paragraph(f"Celular/WhatsApp: <b>{d['celular']}</b>", CAMPO))
+    story.append(Paragraph(f"E-mail: <b>{d['email']}</b>", CAMPO))
+    story.append(Paragraph(f"Em caso de emergência avisar: <b>{d['emergencia']}</b>", CAMPO))
+    story.append(sp(3))
+
+    # ── Dados da Viagem ──────────────────────────────────────────────────
+    viagem_rows = [["Trecho", "Data de Ida", "Data de Volta", "Companhia"]]
+    viagem_rows.append([
+        f"{d['origem']} → {d['destino']}",
+        fmt_data(d['data_ida']),
+        fmt_data(d['data_volta']) if d.get('ida_e_volta') and d.get('data_volta') else "Somente ida",
+        d['companhia'],
+    ])
+    t_viagem = Table(viagem_rows, colWidths=[5.5*cm, 3.3*cm, 3.3*cm, 3.9*cm])
+    t_viagem.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), VERDE),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,-1), 9),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [VCLARO, colors.white]),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#cccccc")),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+    ]))
+    story.append(KeepTogether([
+        Paragraph("<b>DADOS DA VIAGEM:</b>", CAMPO),
+        sp(2),
+        t_viagem,
+    ]))
+    if d.get('localizador', '').strip():
+        story.append(sp(2))
+        story.append(Paragraph(f"Localizador da reserva: <b>{d['localizador']}</b>", CAMPO))
+    story.append(sp(3))
+
+    story.append(Paragraph("Cláusula 2ª – DA NATUREZA DA INTERMEDIAÇÃO", CL_TIT))
+    story.append(Paragraph(
+        "A CONTRATADA atua exclusivamente como <b>intermediária</b> entre o CONTRATANTE "
+        "e a(s) companhia(s) aérea(s) e/ou consolidadora(s) de viagens, não se "
+        "confundindo com o transportador aéreo. O contrato de transporte é celebrado "
+        "diretamente entre o CONTRATANTE e a companhia aérea responsável pelo voo, sendo "
+        "esta a única responsável pela execução do serviço de transporte, incluindo "
+        "horários, itinerário, bagagem, atrasos, cancelamentos e overbooking, nos termos "
+        "da Convenção de Montreal (Decreto nº 5.910/2006) e da Resolução ANAC nº "
+        "400/2016.",
+        CORPO))
+    story.append(Paragraph(
+        "<b>Parágrafo único</b> – Este termo aplica-se exclusivamente à intermediação de "
+        "emissão de <b>passagem aérea avulsa</b>. Caso a contratação inclua hospedagem, "
+        "pacote turístico ou outros serviços combinados, aplicam-se as disposições do "
+        "Contrato de Prestação de Serviços Turísticos da CONTRATADA, uma vez que a "
+        "limitação de responsabilidade aqui prevista está condicionada à venda isolada do "
+        "bilhete, nos termos do entendimento do Superior Tribunal de Justiça (STJ, REsp "
+        "2.123.720): \"Quando o serviço prestado pela agência/empresa de turismo for "
+        "exclusivamente a venda de passagem aérea, fica afastada sua responsabilidade\" "
+        "pelo cumprimento do contrato de transporte, por não deter a CONTRATADA "
+        "ingerência sobre a sua execução.", CORPO))
+
+    story.append(Paragraph("Cláusula 3ª – DA RESPONSABILIDADE DA CONTRATADA", CL_TIT))
+    story.append(Paragraph(
+        "A CONTRATADA responde, nos termos dos arts. 14 e 15 do Código de Defesa do "
+        "Consumidor, exclusivamente pelos serviços que presta diretamente: a correta "
+        "emissão da passagem conforme os dados fornecidos pelo CONTRATANTE, a informação "
+        "clara sobre tarifas, regras e taxas antes da emissão, e o repasse de "
+        "comunicações relevantes recebidas da companhia aérea. A CONTRATADA <b>não "
+        "responde</b> por fatos de responsabilidade exclusiva da companhia aérea ou de "
+        "terceiros (atraso, cancelamento, overbooking, extravio de bagagem, alteração de "
+        "malha aérea, greve, entre outros), devendo o CONTRATANTE, nesses casos, buscar "
+        "diretamente a companhia aérea, sem prejuízo do apoio da CONTRATADA na "
+        "intermediação do contato.", CORPO))
+
+    story.append(Paragraph("Cláusula 4ª – DOS DADOS FORNECIDOS E DA DOCUMENTAÇÃO", CL_TIT))
+    story.append(Paragraph(
+        "<b>§1º</b> – A emissão da passagem é feita com base exclusivamente nos dados "
+        "(nome completo, documento, datas, trechos) fornecidos pelo CONTRATANTE. Erros "
+        "de digitação ou informação incorreta identificados após a emissão poderão gerar "
+        "custos de alteração cobrados pela companhia aérea/consolidadora, que serão "
+        "integralmente repassados ao CONTRATANTE.", CORPO))
+    story.append(Paragraph(
+        "<b>§2º</b> – É de responsabilidade exclusiva do CONTRATANTE possuir documento "
+        "de identificação válido e, quando aplicável, passaporte, visto e demais "
+        "documentos exigidos para embarque e entrada no destino, isentando a CONTRATADA "
+        "de qualquer responsabilidade por impedimento de embarque ou de entrada "
+        "decorrente de documentação irregular (art. 14, §3º, II do CDC).", CORPO))
+
+    # ── Valores ──────────────────────────────────────────────────────────
+    valores_rows = [
+        ["Tarifa aérea",       f"R$ {d['valor_tarifa_fmt']}"],
+        ["Taxa de serviço",    f"R$ {d['valor_taxa_fmt']}"],
+        ["Valor total",        f"R$ {d['valor_total_fmt']}"],
+    ]
+    t_valores = Table(valores_rows, colWidths=[10*cm, 6*cm])
+    t_valores.setStyle(TableStyle([
+        ("FONTSIZE",      (0,0), (-1,-1), 9.5),
+        ("ALIGN",         (1,0), (1,-1), "RIGHT"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#cccccc")),
+        ("ROWBACKGROUNDS",(0,0), (-1,-1), [colors.white, colors.white, VCLARO]),
+        ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+    ]))
+    story.append(KeepTogether([
+        Paragraph("Cláusula 5ª – DO PREÇO E DA TAXA DE SERVIÇO", CL_TIT),
+        Paragraph(
+            f"O valor total pago pelo CONTRATANTE é de <b>R$ {d['valor_total_fmt']} "
+            f"({d['valor_extenso']})</b>, composto pela tarifa aérea (repassada à "
+            "companhia aérea/consolidadora) somada à taxa de serviço da CONTRATADA, "
+            "remuneração pela intermediação, conforme discriminado abaixo:", CORPO),
+        sp(2),
+        t_valores,
+    ]))
+    story.append(sp(2))
+    story.append(Paragraph(
+        "<b>§1º</b> – Tarifas aéreas estão sujeitas a variação de disponibilidade e "
+        "câmbio até a confirmação do pagamento e efetiva emissão do bilhete. Caso a "
+        "tarifa informada não esteja mais disponível no momento da emissão, a "
+        "CONTRATADA comunicará o novo valor ao CONTRATANTE, que poderá aceitar a "
+        "diferença ou desistir da compra com devolução integral dos valores ainda não "
+        "repassados à companhia aérea.", CORPO))
+    story.append(Paragraph(
+        "<b>§2º</b> – A taxa de serviço remunera o trabalho de pesquisa, cotação, "
+        "emissão e suporte da CONTRATADA e <b>não é reembolsável após a emissão do "
+        "bilhete</b>, ainda que o CONTRATANTE opte por cancelar a viagem, salvo erro "
+        "comprovado da CONTRATADA na emissão.", CORPO))
+
+    story.append(Paragraph("Cláusula 6ª – DO CANCELAMENTO, ALTERAÇÃO E REEMBOLSO", CL_TIT))
+    story.append(Paragraph(
+        "<b>§1º</b> – As regras de cancelamento, alteração e reembolso da passagem "
+        "aérea (incluindo prazos, multas e valores) são definidas pela companhia aérea "
+        "e/ou consolidadora, conforme a tarifa escolhida, e serão informadas ao "
+        "CONTRATANTE antes da confirmação da compra.", CORPO))
+    story.append(Paragraph(
+        "<b>§2º</b> – Tarifas promocionais podem ser não reembolsáveis ou sujeitas a "
+        "multa de alteração/cancelamento definida pela companhia aérea, conforme "
+        "informado no ato da cotação.", CORPO))
+    story.append(Paragraph(
+        "<b>§3º</b> – Solicitado o cancelamento ou alteração pelo CONTRATANTE, a "
+        "CONTRATADA repassará o pedido à companhia aérea/consolidadora e devolverá ao "
+        "CONTRATANTE os valores efetivamente reembolsados por estas, descontada a taxa "
+        "de serviço já prestada (Cláusula 5ª, §2º) e eventuais taxas de "
+        "cancelamento/alteração cobradas pela companhia aérea.", CORPO))
+    story.append(Paragraph(
+        "<b>§4º</b> – Reembolsos em cartão de crédito seguem o cronograma de estorno da "
+        "operadora do cartão, não controlado pela CONTRATADA.", CORPO))
+
+    story.append(Paragraph("Cláusula 7ª – DA FORMA DE PAGAMENTO", CL_TIT))
+    story.append(Paragraph(
+        f"Forma de pagamento escolhida: <b>{d['forma_pagamento']}</b>. Em caso de "
+        "recusa, estorno indevido ou chargeback do pagamento após a emissão da "
+        "passagem, o CONTRATANTE será responsável pelo ressarcimento integral do valor "
+        "à CONTRATADA, sem prejuízo das medidas legais cabíveis.", CORPO))
+
+    # ── LGPD ──────────────────────────────────────────────────────────────
+    story.append(Paragraph("Cláusula 8ª – DA PROTEÇÃO DE DADOS PESSOAIS – LGPD", CL_TIT))
+    story.append(Paragraph(
+        "Em conformidade com a Lei nº 13.709/2018 (LGPD), a CONTRATADA compromete-se a "
+        "coletar apenas os dados estritamente necessários à emissão da passagem, "
+        "utilizá-los exclusivamente para essa finalidade, não compartilhá-los com "
+        "terceiros sem consentimento expresso (salvo obrigação legal ou repasse "
+        "necessário à companhia aérea/consolidadora para a emissão) e garantir a "
+        "segurança das informações com medidas técnicas e administrativas adequadas.",
+        CORPO))
+
+    story.append(Paragraph("Cláusula 9ª – DO FORO", CL_TIT))
+    story.append(Paragraph(
+        "Fica eleito o foro da Comarca de <b>Curitiba – PR</b> para dirimir quaisquer "
+        "controvérsias oriundas deste termo, com renúncia a qualquer outro, por mais "
+        "privilegiado que seja (art. 63 do CPC).", CORPO))
+
+    story.append(Paragraph("Cláusula 10ª – DA VALIDADE DIGITAL", CL_TIT))
+    story.append(Paragraph(
+        "Este termo tem plena validade jurídica em formato digital, nos termos da MP "
+        "nº 2.200-2/2001, da Lei nº 14.063/2020, do Marco Civil da Internet (Lei nº "
+        "12.965/2014) e do CDC. Sua aceitação ocorre mediante confirmação de pagamento "
+        "ou assinatura eletrônica.", CORPO))
+
+    # ── Assinaturas ────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(sp(136))
+    story.append(hr(VERDE, 1))
+    story.append(sp(12))
+
+    ass_st = E("ass", fontSize=9, alignment=TA_CENTER, fontName="Helvetica", leading=14)
+    ass_l = Paragraph(
+        "________________________________________<br/>"
+        "<b>ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA</b><br/>"
+        "CNPJ/CADASTUR: 65.050.169/0001-00<br/>"
+        "David Cortés Hernández – Sócio-Administrador<br/>"
+        "Curitiba – PR | Agência Digital", ass_st)
+    ass_r = Paragraph(
+        "________________________________________<br/>"
+        f"<b>{d['nome']}</b><br/>"
+        f"CPF: {d['cpf']}", ass_st)
+
+    t_ass = Table([[ass_l, ass_r]], colWidths=[8*cm, 8*cm])
+    t_ass.setStyle(TableStyle([
+        ("ALIGN",  (0,0), (-1,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING",  (0,0), (-1,-1), 8),
+        ("RIGHTPADDING", (0,0), (-1,-1), 8),
+    ]))
+    story.append(t_ass)
+    story.append(sp(8))
+    story.append(Paragraph(
+        f"Curitiba – PR, {data_extenso(d['data_contrato'])}.",
+        E("data", fontSize=9.5, alignment=TA_CENTER)))
+    story.append(sp(8))
+    story.append(hr(VERDE, 0.5))
+    story.append(Paragraph(
+        "ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA  |  CNPJ: 65.050.169/0001-00  |  "
+        "CADASTUR Regular – Válido até 10/02/2028  |  rotacontigoturismo@gmail.com  |  "
+        "(41) 99819-5099", RODAPE))
+
+    doc.build(story, canvasmaker=_PaginaCanvas)
+    return buffer.getvalue()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GERAÇÃO DO PDF — TERMO DE INTERMEDIAÇÃO CORPORATIVO (CONDIÇÕES GERAIS)
+# ══════════════════════════════════════════════════════════════════════════════
+# Assinado UMA VEZ por empresa cliente. Cobre a relação continuada; cada
+# emissão de passagem específica é registrada depois via "Pedido de Emissão"
+# (gerar_pdf_pedido_emissao), sem precisar de nova assinatura formal a cada voo.
+
+def gerar_pdf_corporativo_geral(d: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=2.5*cm, leftMargin=2.5*cm,
+        topMargin=2*cm, bottomMargin=2*cm,
+    )
+    story = []
+    story.append(sp(2))
+
+    # ── Cabeçalho ──────────────────────────────────────────────────────────
+    story.extend(_cabecalho())
+
+    story.append(Paragraph("TERMO DE INTERMEDIAÇÃO CORPORATIVO – CONDIÇÕES GERAIS", SECAO))
+    story.append(hr(VERDE, 0.5))
+
+    story.append(Paragraph("Cláusula 1ª – DO OBJETO E DAS PARTES", CL_TIT))
+    story.append(Paragraph(
+        "O presente termo estabelece as condições gerais que regerão a intermediação, "
+        "pela <b>ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA</b>, inscrita no "
+        "CNPJ/CADASTUR sob nº <b>65.050.169/0001-00</b>, com sede em Curitiba – PR, "
+        "operando exclusivamente de forma digital, e-mail: rotacontigoturismo@gmail.com, "
+        "telefone: (41) 99819-5099, doravante denominada <b>CONTRATADA</b>, para "
+        "emissão de passagens aéreas solicitadas ao longo do tempo pela pessoa jurídica "
+        "identificada abaixo, doravante denominada <b>CONTRATANTE</b>:", CORPO))
+
+    story.append(sp(2))
+    story.append(Paragraph("<b>DADOS DA EMPRESA CONTRATANTE:</b>", CAMPO))
+    story.append(Paragraph(f"Razão social: <b>{d['razao_social']}</b>", CAMPO))
+    story.append(Paragraph(f"CNPJ: <b>{d['cnpj_empresa']}</b>", CAMPO))
+    story.append(Paragraph(f"Endereço: <b>{d['endereco_empresa']}</b>", CAMPO))
+    story.append(sp(2))
+    story.append(Paragraph("<b>RESPONSÁVEL/SOLICITANTE AUTORIZADO:</b>", CAMPO))
+    story.append(Paragraph(f"Nome: <b>{d['responsavel_nome']}</b>    Cargo: <b>{d['responsavel_cargo']}</b>", CAMPO))
+    story.append(Paragraph(f"E-mail: <b>{d['responsavel_email']}</b>    Telefone: <b>{d['responsavel_telefone']}</b>", CAMPO))
+    story.append(sp(3))
+
+    story.append(Paragraph("Cláusula 2ª – DA NATUREZA DA INTERMEDIAÇÃO", CL_TIT))
+    story.append(Paragraph(
+        "A CONTRATADA atua exclusivamente como <b>intermediária</b> entre a CONTRATANTE "
+        "e a(s) companhia(s) aérea(s) e/ou consolidadora(s) de viagens, não se "
+        "confundindo com o transportador aéreo. O contrato de transporte é celebrado "
+        "diretamente entre o passageiro e a companhia aérea responsável pelo voo, sendo "
+        "esta a única responsável pela execução do serviço de transporte, incluindo "
+        "horários, itinerário, bagagem, atrasos, cancelamentos e overbooking, nos termos "
+        "da Convenção de Montreal (Decreto nº 5.910/2006) e da Resolução ANAC nº "
+        "400/2016.",
+        CORPO))
+    story.append(Paragraph(
+        "<b>Parágrafo único</b> – Este termo aplica-se exclusivamente à intermediação de "
+        "emissão de <b>passagem aérea avulsa</b>. Caso alguma solicitação inclua "
+        "hospedagem, pacote turístico ou outros serviços combinados, aplicam-se as "
+        "disposições do Contrato de Prestação de Serviços Turísticos da CONTRATADA para "
+        "aquela solicitação específica, uma vez que a limitação de responsabilidade aqui "
+        "prevista está condicionada à venda isolada do bilhete, nos termos do "
+        "entendimento do Superior Tribunal de Justiça (STJ, REsp 2.123.720): \"Quando o "
+        "serviço prestado pela agência/empresa de turismo for exclusivamente a venda de "
+        "passagem aérea, fica afastada sua responsabilidade\" pelo cumprimento do "
+        "contrato de transporte, por não deter a CONTRATADA ingerência sobre a sua "
+        "execução.", CORPO))
+
+    story.append(Paragraph("Cláusula 3ª – DA RESPONSABILIDADE DA CONTRATADA E DA NATUREZA DA RELAÇÃO", CL_TIT))
+    story.append(Paragraph(
+        "A CONTRATADA responde exclusivamente pelos serviços que presta diretamente: a "
+        "correta emissão da passagem conforme os dados fornecidos pela CONTRATANTE, a "
+        "informação clara sobre tarifas, regras e taxas antes de cada emissão, e o "
+        "repasse de comunicações relevantes recebidas da companhia aérea. A CONTRATADA "
+        "<b>não responde</b> por fatos de responsabilidade exclusiva da companhia aérea "
+        "ou de terceiros (atraso, cancelamento, overbooking, extravio de bagagem, "
+        "alteração de malha aérea, greve, entre outros), devendo a CONTRATANTE, nesses "
+        "casos, buscar diretamente a companhia aérea, sem prejuízo do apoio da "
+        "CONTRATADA na intermediação do contato.", CORPO))
+    story.append(Paragraph(
+        "<b>Parágrafo único</b> – A aplicabilidade do Código de Defesa do Consumidor a "
+        "esta relação depende da caracterização da CONTRATANTE como destinatária final "
+        "dos serviços contratados, nos termos da teoria finalista adotada pela "
+        "jurisprudência majoritária do STJ. Subsidiária e cumulativamente, aplicam-se as "
+        "disposições do Código Civil (Lei nº 10.406/2002) relativas aos contratos em "
+        "geral.", CORPO))
+
+    story.append(Paragraph("Cláusula 4ª – DOS PEDIDOS DE EMISSÃO", CL_TIT))
+    story.append(Paragraph(
+        "<b>§1º</b> – Cada emissão de passagem aérea solicitada pela CONTRATANTE ao "
+        "longo da vigência deste termo será registrada em um <b>Pedido de Emissão</b> "
+        "específico, contendo os dados do passageiro, do trecho, das datas e dos "
+        "valores daquela operação, o qual passa a integrar este termo como seu anexo, "
+        "sem necessidade de nova assinatura formal a cada solicitação.", CORPO))
+    story.append(Paragraph(
+        "<b>§2º</b> – A emissão de cada passagem é feita com base exclusivamente nos "
+        "dados fornecidos pela CONTRATANTE por meio de seu responsável/solicitante "
+        "autorizado. Erros de digitação ou informação incorreta identificados após a "
+        "emissão poderão gerar custos de alteração cobrados pela companhia "
+        "aérea/consolidadora, que serão integralmente repassados à CONTRATANTE.", CORPO))
+    story.append(Paragraph(
+        "<b>§3º</b> – É de responsabilidade exclusiva da CONTRATANTE e de cada "
+        "passageiro possuir documento de identificação válido e, quando aplicável, "
+        "passaporte, visto e demais documentos exigidos para embarque e entrada no "
+        "destino, isentando a CONTRATADA de qualquer responsabilidade por impedimento de "
+        "embarque ou de entrada decorrente de documentação irregular.", CORPO))
+
+    story.append(Paragraph("Cláusula 5ª – DA TAXA DE SERVIÇO E DO PREÇO", CL_TIT))
+    story.append(Paragraph(
+        "O valor de cada emissão é composto pela tarifa aérea (repassada à companhia "
+        "aérea/consolidadora) somada à taxa de serviço da CONTRATADA, remuneração pela "
+        "intermediação, ambas informadas em cada Pedido de Emissão. Tarifas aéreas estão "
+        "sujeitas a variação de disponibilidade e câmbio até a confirmação e efetiva "
+        "emissão do bilhete. A taxa de serviço remunera o trabalho de pesquisa, cotação, "
+        "emissão e suporte da CONTRATADA e <b>não é reembolsável após a emissão do "
+        "bilhete</b>, salvo erro comprovado da CONTRATADA.", CORPO))
+
+    story.append(Paragraph("Cláusula 6ª – DO CANCELAMENTO, ALTERAÇÃO E REEMBOLSO", CL_TIT))
+    story.append(Paragraph(
+        "As regras de cancelamento, alteração e reembolso de cada passagem (incluindo "
+        "prazos, multas e valores) são definidas pela companhia aérea e/ou "
+        "consolidadora, conforme a tarifa escolhida, e serão informadas à CONTRATANTE "
+        "antes da confirmação de cada compra. Solicitado o cancelamento ou alteração, a "
+        "CONTRATADA repassará o pedido à companhia aérea/consolidadora e devolverá à "
+        "CONTRATANTE os valores efetivamente reembolsados por estas, descontada a taxa "
+        "de serviço já prestada e eventuais taxas cobradas pela companhia aérea.", CORPO))
+
+    story.append(Paragraph("Cláusula 7ª – DA FORMA DE PAGAMENTO", CL_TIT))
+    story.append(Paragraph(
+        f"Pagamento na modalidade <b>faturado</b>, com fechamento a cada "
+        f"<b>{d['periodicidade_faturamento']} dias</b> e vencimento em "
+        f"<b>{d['prazo_faturamento']} dias</b> corridos após a emissão da respectiva "
+        "nota fiscal/fatura pela CONTRATADA, consolidando as emissões realizadas no "
+        "período.", CORPO))
+    story.append(Paragraph(
+        "<b>§1º</b> – Em caso de recusa, estorno indevido ou chargeback de qualquer "
+        "pagamento, a CONTRATANTE será responsável pelo ressarcimento integral do valor "
+        "à CONTRATADA, sem prejuízo das medidas legais cabíveis.", CORPO))
+    story.append(Paragraph(
+        "<b>§2º</b> – O não pagamento no prazo faturado sujeitará a CONTRATANTE a "
+        "multa de 2% (dois por cento) sobre o valor em atraso, juros de mora de 1% "
+        "(um por cento) ao mês, e correção monetária pelo IGP-M/FGV (ou índice que vier "
+        "a substituí-lo) desde o vencimento até a data do efetivo pagamento.", CORPO))
+
+    story.append(Paragraph("Cláusula 8ª – DA CONFIDENCIALIDADE", CL_TIT))
+    story.append(Paragraph(
+        "As partes comprometem-se a manter sigilo sobre quaisquer informações "
+        "comerciais, financeiras ou operacionais trocadas em razão deste termo, não as "
+        "divulgando a terceiros sem consentimento prévio e expresso da outra parte, "
+        "salvo por determinação legal ou judicial.", CORPO))
+
+    # ── LGPD ──────────────────────────────────────────────────────────────
+    story.append(Paragraph("Cláusula 9ª – DA PROTEÇÃO DE DADOS PESSOAIS – LGPD", CL_TIT))
+    story.append(Paragraph(
+        "Em conformidade com a Lei nº 13.709/2018 (LGPD), a CONTRATADA compromete-se a "
+        "coletar apenas os dados dos passageiros/funcionários estritamente necessários a "
+        "cada emissão, indicados pela CONTRATANTE por meio de seu responsável "
+        "autorizado, utilizá-los exclusivamente para essa finalidade, não compartilhá-los "
+        "com terceiros sem consentimento expresso (salvo obrigação legal ou repasse "
+        "necessário à companhia aérea/consolidadora) e garantir a segurança das "
+        "informações com medidas técnicas e administrativas adequadas. A CONTRATANTE "
+        "declara possuir base legal e legitimidade para compartilhar com a CONTRATADA os "
+        "dados pessoais de seus funcionários/prepostos indicados como passageiros.",
+        CORPO))
+
+    story.append(Paragraph("Cláusula 10ª – DA VIGÊNCIA E RESCISÃO", CL_TIT))
+    story.append(Paragraph(
+        "Este termo vigora por prazo indeterminado a partir da data de assinatura, "
+        "podendo ser rescindido por qualquer das partes mediante aviso prévio por "
+        "escrito de 30 (trinta) dias, sem prejuízo da conclusão de Pedidos de Emissão já "
+        "confirmados e do pagamento de valores em aberto.", CORPO))
+
+    story.append(Paragraph("Cláusula 11ª – DO FORO", CL_TIT))
+    story.append(Paragraph(
+        "Fica eleito o foro da Comarca de <b>Curitiba – PR</b> para dirimir quaisquer "
+        "controvérsias oriundas deste termo, com renúncia a qualquer outro, por mais "
+        "privilegiado que seja (art. 63 do CPC).", CORPO))
+
+    story.append(Paragraph("Cláusula 12ª – DA VALIDADE DIGITAL", CL_TIT))
+    story.append(Paragraph(
+        "Este termo tem plena validade jurídica em formato digital, nos termos da MP "
+        "nº 2.200-2/2001, da Lei nº 14.063/2020, do Marco Civil da Internet (Lei nº "
+        "12.965/2014) e da legislação civil aplicável. Sua aceitação ocorre mediante "
+        "assinatura eletrônica.", CORPO))
+
+    # ── Assinaturas ────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(sp(136))
+    story.append(hr(VERDE, 1))
+    story.append(sp(12))
+
+    ass_st = E("ass", fontSize=9, alignment=TA_CENTER, fontName="Helvetica", leading=14)
+    ass_l = Paragraph(
+        "________________________________________<br/>"
+        "<b>ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA</b><br/>"
+        "CNPJ/CADASTUR: 65.050.169/0001-00<br/>"
+        "David Cortés Hernández – Sócio-Administrador<br/>"
+        "Curitiba – PR | Agência Digital", ass_st)
+    ass_r = Paragraph(
+        "________________________________________<br/>"
+        f"<b>{d['razao_social']}</b><br/>"
+        f"CNPJ: {d['cnpj_empresa']}<br/>"
+        f"{d['responsavel_nome']} – {d['responsavel_cargo']}", ass_st)
+
+    t_ass = Table([[ass_l, ass_r]], colWidths=[8*cm, 8*cm])
+    t_ass.setStyle(TableStyle([
+        ("ALIGN",  (0,0), (-1,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING",  (0,0), (-1,-1), 8),
+        ("RIGHTPADDING", (0,0), (-1,-1), 8),
+    ]))
+    story.append(t_ass)
+    story.append(sp(8))
+    story.append(Paragraph(
+        f"Curitiba – PR, {data_extenso(d['data_contrato'])}.",
+        E("data", fontSize=9.5, alignment=TA_CENTER)))
+    story.append(sp(8))
+    story.append(hr(VERDE, 0.5))
+    story.append(Paragraph(
+        "ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA  |  CNPJ: 65.050.169/0001-00  |  "
+        "CADASTUR Regular – Válido até 10/02/2028  |  rotacontigoturismo@gmail.com  |  "
+        "(41) 99819-5099", RODAPE))
+
+    doc.build(story, canvasmaker=_PaginaCanvas)
+    return buffer.getvalue()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GERAÇÃO DO PDF — PEDIDO DE EMISSÃO (VINCULADO AO TERMO CORPORATIVO GERAL)
+# ══════════════════════════════════════════════════════════════════════════════
+# Documento leve, um por passagem, sem repetir as cláusulas gerais — apenas
+# referencia o Termo de Intermediação Corporativo já assinado.
+
+def gerar_pdf_pedido_emissao(d: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=2.5*cm, leftMargin=2.5*cm,
+        topMargin=2*cm, bottomMargin=2*cm,
+    )
+    story = []
+    story.append(sp(2))
+
+    # ── Cabeçalho ──────────────────────────────────────────────────────────
+    story.extend(_cabecalho())
+
+    story.append(Paragraph("PEDIDO DE EMISSÃO – PASSAGEM AÉREA CORPORATIVA", SECAO))
+    story.append(hr(VERDE, 0.5))
+
+    story.append(Paragraph(
+        f"O presente Pedido de Emissão é regido pelo <b>Termo de Intermediação "
+        f"Corporativo – Condições Gerais</b> firmado entre a "
+        f"<b>ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA</b> (CNPJ "
+        f"65.050.169/0001-00) e a CONTRATANTE abaixo identificada em "
+        f"<b>{fmt_data(d['data_termo_geral'])}</b>, cujas cláusulas gerais "
+        "permanecem integralmente aplicáveis a esta emissão, sendo este documento "
+        "apenas o registro específico da presente operação.", CORPO))
+    story.append(sp(3))
+
+    story.append(Paragraph("<b>EMPRESA CONTRATANTE:</b>", CAMPO))
+    story.append(Paragraph(f"Razão social: <b>{d['razao_social']}</b>    CNPJ: <b>{d['cnpj_empresa']}</b>", CAMPO))
+    story.append(sp(2))
+    story.append(Paragraph("<b>DADOS DO(A) PASSAGEIRO(A):</b>", CAMPO))
+    story.append(Paragraph(f"Nome completo: <b>{d['passageiro_nome']}</b>    CPF: <b>{d['passageiro_cpf']}</b>", CAMPO))
+    story.append(sp(3))
+
+    # ── Dados da Viagem ──────────────────────────────────────────────────
+    viagem_rows = [["Trecho", "Data de Ida", "Data de Volta", "Companhia"]]
+    viagem_rows.append([
+        f"{d['origem']} → {d['destino']}",
+        fmt_data(d['data_ida']),
+        fmt_data(d['data_volta']) if d.get('ida_e_volta') and d.get('data_volta') else "Somente ida",
+        d['companhia'],
+    ])
+    t_viagem = Table(viagem_rows, colWidths=[5.5*cm, 3.3*cm, 3.3*cm, 3.9*cm])
+    t_viagem.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), VERDE),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,-1), 9),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [VCLARO, colors.white]),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#cccccc")),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+    ]))
+    story.append(KeepTogether([
+        Paragraph("<b>DADOS DA VIAGEM:</b>", CAMPO),
+        sp(2),
+        t_viagem,
+    ]))
+    if d.get('localizador', '').strip():
+        story.append(sp(2))
+        story.append(Paragraph(f"Localizador da reserva: <b>{d['localizador']}</b>", CAMPO))
+    story.append(sp(3))
+
+    # ── Valores ──────────────────────────────────────────────────────────
+    valores_rows = [
+        ["Tarifa aérea",       f"R$ {d['valor_tarifa_fmt']}"],
+        ["Taxa de serviço",    f"R$ {d['valor_taxa_fmt']}"],
+        ["Valor total",        f"R$ {d['valor_total_fmt']}"],
+    ]
+    t_valores = Table(valores_rows, colWidths=[10*cm, 6*cm])
+    t_valores.setStyle(TableStyle([
+        ("FONTSIZE",      (0,0), (-1,-1), 9.5),
+        ("ALIGN",         (1,0), (1,-1), "RIGHT"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#cccccc")),
+        ("ROWBACKGROUNDS",(0,0), (-1,-1), [colors.white, colors.white, VCLARO]),
+        ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+    ]))
+    story.append(KeepTogether([
+        Paragraph("<b>VALORES DESTA EMISSÃO:</b>", CAMPO),
+        sp(2),
+        t_valores,
+        sp(2),
+        Paragraph(
+            f"Valor total por extenso: <b>{d['valor_extenso']}</b>. A cobrança deste "
+            "valor será incluída na fatura consolidada do período, conforme a "
+            "periodicidade e o prazo de vencimento definidos no Termo de Intermediação "
+            "Corporativo – Condições Gerais.", CORPO),
+    ]))
+    story.append(sp(3))
+
+    story.append(Paragraph(
+        "Aplicam-se integralmente a esta emissão as cláusulas de natureza da "
+        "intermediação, responsabilidade, documentação, preço e taxa de serviço, "
+        "cancelamento/alteração/reembolso, forma de pagamento, confidencialidade e LGPD "
+        "previstas no Termo de Intermediação Corporativo – Condições Gerais "
+        "mencionado acima, inclusive quanto à não reembolsabilidade da taxa de serviço "
+        "após a emissão do bilhete.", CORPO))
+
+    # ── Confirmação ────────────────────────────────────────────────────────
+    story.append(sp(10))
+    story.append(hr(VERDE, 0.5))
+    story.append(sp(6))
+    story.append(Paragraph(
+        f"Curitiba – PR, {data_extenso(d['data_pedido'])}.",
+        E("data", fontSize=9.5, alignment=TA_CENTER)))
+    story.append(sp(6))
+    story.append(Paragraph(
+        "ROTA CONTIGO AGENCIA DE VIAGENS E TURISMO LTDA  |  CNPJ: 65.050.169/0001-00  |  "
+        "CADASTUR Regular – Válido até 10/02/2028  |  rotacontigoturismo@gmail.com  |  "
+        "(41) 99819-5099", RODAPE))
 
     doc.build(story, canvasmaker=_PaginaCanvas)
     return buffer.getvalue()
@@ -653,7 +1281,8 @@ def _pos(x: float, y: float, pagina: int, elemento: str = "SIGNATURE") -> str:
 def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
                       telefone_cliente: str, nome_arquivo: str, api_token: str,
                       via_whatsapp: bool, via_email: bool = True,
-                      sandbox: bool = False) -> dict:
+                      sandbox: bool = False,
+                      mensagem_intro: str = "Segue o contrato da sua excursão com a Rota Contigo.") -> dict:
     """Envia o PDF para o Autentique e retorna link de assinatura."""
 
     # Detecta última página (onde ficam as linhas de assinatura)
@@ -721,7 +1350,7 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
         '{"query":"' + query.replace("\n", "\\n").replace('"', '\\"') + '",'
         '"variables":{'
         '"document":{"name":"' + nome_arquivo.replace(".pdf", "") + '",'
-        '"message":"Olá ' + nome_cliente.split()[0] + '! Segue o contrato da sua excursão com a Rota Contigo. Por favor, assine digitalmente clicando no botão abaixo."},'
+        '"message":"Olá ' + nome_cliente.split()[0] + '! ' + mensagem_intro + ' Por favor, assine digitalmente clicando no botão abaixo."},'
         '"signers":[' + signer_input + ',' + signer_rota + '],'
         '"file":null}}'
     )
@@ -764,12 +1393,6 @@ def enviar_autentique(pdf_bytes: bytes, nome_cliente: str, email_cliente: str,
 # ══════════════════════════════════════════════════════════════════════════════
 # INTERFACE STREAMLIT
 # ══════════════════════════════════════════════════════════════════════════════
-
-st.set_page_config(
-    page_title="Rota Contigo – Contrato",
-    page_icon="🚌",
-    layout="centered",
-)
 
 # ── Proteção por senha ────────────────────────────────────────────────────────
 def _checar_senha() -> bool:
@@ -817,103 +1440,223 @@ st.markdown(
 )
 st.divider()
 
+TIPO_EXCURSAO     = "Contrato de Excursão"
+TIPO_PASSAGEM_PF  = "Termo de Intermediação – Passagem Aérea (Pessoa Física)"
+TIPO_PJ_GERAL     = "Termo de Intermediação Corporativo – Condições Gerais (assinar 1x)"
+TIPO_PJ_PEDIDO    = "Pedido de Emissão Corporativo (uma passagem)"
+
+tipo_documento = st.radio(
+    "Tipo de documento",
+    [TIPO_EXCURSAO, TIPO_PASSAGEM_PF, TIPO_PJ_GERAL, TIPO_PJ_PEDIDO],
+    horizontal=True,
+)
+if tipo_documento == TIPO_PJ_PEDIDO:
+    st.caption("A empresa precisa ter o Termo de Intermediação Corporativo – Condições Gerais assinado antes do primeiro pedido.")
+st.divider()
+
 with st.form("contrato_form"):
 
-    # ── Dados do Contratante ──────────────────────────────────────────────
-    st.markdown("### 👤 Dados do Contratante")
+    if tipo_documento == TIPO_PJ_GERAL:
+        # ── Dados da Empresa Contratante ────────────────────────────────────
+        st.markdown("### 🏢 Dados da Empresa Contratante")
 
-    nome = st.text_input("Nome completo *")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        nascimento = st.date_input(
-            "Data de Nascimento *",
-            value=date(1990, 1, 1),
-            min_value=date(1920, 1, 1),
-            max_value=date.today(),
-        )
-        cpf = st.text_input("CPF *", placeholder="000.000.000-00")
-    with col2:
-        rg = st.text_input("RG *")
-        celular = st.text_input("Celular/WhatsApp *", placeholder="(41) 99999-9999")
-
-    email      = st.text_input("E-mail *")
-    emergencia = st.text_input(
-        "Em caso de emergência avisar *",
-        placeholder="Nome e telefone do contato")
-
-    st.divider()
-
-    # ── Participantes adicionais ──────────────────────────────────────────
-    st.markdown("### 👨‍👩‍👧‍👦 Participantes Adicionais")
-    st.caption("Se for uma família ou grupo, liste os demais participantes abaixo. O titular acima já está incluído automaticamente.")
-
-    num_extras = st.number_input(
-        "Quantos participantes adicionais? (além do titular)",
-        min_value=0, max_value=20, value=0, step=1)
-
-    participantes_extras = []
-    if num_extras > 0:
-        st.markdown("**Preencha os dados de cada participante:**")
-        for i in range(int(num_extras)):
-            st.markdown(f"*Participante {i+2}*")
-            col1, col2, col3 = st.columns([3, 2, 2])
-            with col1:
-                p_nome = st.text_input("Nome", key=f"p_nome_{i}", placeholder="Nome completo")
-            with col2:
-                p_tipo = st.selectbox("Tipo", ["Adulto", "Menor"], key=f"p_tipo_{i}")
-            with col3:
-                p_idade = st.number_input("Idade", min_value=0, max_value=99, value=0, key=f"p_idade_{i}")
-            participantes_extras.append({
-                "nome":  p_nome,
-                "tipo":  p_tipo,
-                "idade": p_idade,
-            })
-
-    st.divider()
-
-    # ── Dados da Excursão ─────────────────────────────────────────────────
-    st.markdown("### 🗺️ Dados da Excursão")
-
-    destino     = st.text_input("Destino *", placeholder="ex: Bonito – MS")
-    data_viagem = st.date_input("Data da viagem *", min_value=date.today())
-
-    col1, col2 = st.columns(2)
-    with col1:
-        valor_num = st.number_input(
-            "Valor do pacote (R$) *", min_value=0.0, step=0.01, format="%.2f")
-    with col2:
-        valor_extenso = st.text_input(
-            "Valor por extenso *",
-            placeholder="ex: quinhentos reais")
-
-    st.divider()
-
-    # ── Serviços Inclusos ─────────────────────────────────────────────────
-    st.markdown("### ✅ Serviços Inclusos")
-    st.caption("Marque o que está incluso e adicione observações se necessário.")
-
-    servicos_lista = [
-        "Transporte (ônibus/van)",
-        "Café da manhã",
-        "Almoço",
-        "Jantar",
-        "Ingressos / Entradas",
-        "Guia turístico",
-        "Seguro de viagem",
-    ]
-
-    servicos_data = {}
-    for s in servicos_lista:
-        col1, col2 = st.columns([1, 2])
+        col1, col2 = st.columns(2)
         with col1:
-            inc = st.checkbox(s, key=f"inc_{s}")
+            razao_social = st.text_input("Razão social *")
         with col2:
-            obs = st.text_input(
-                "Observação", key=f"obs_{s}",
-                label_visibility="collapsed",
-                placeholder=f"Observação sobre {s.lower()}")
-        servicos_data[s] = {"incluso": inc, "obs": obs}
+            cnpj_empresa = st.text_input("CNPJ *", placeholder="00.000.000/0000-00")
+
+        endereco_empresa = st.text_input("Endereço completo *", placeholder="Rua, número, bairro, cidade – UF, CEP")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            responsavel_nome  = st.text_input("Nome do responsável/solicitante *")
+            responsavel_email = st.text_input("E-mail do responsável *")
+        with col2:
+            responsavel_cargo     = st.text_input("Cargo do responsável *")
+            responsavel_telefone  = st.text_input("Telefone/WhatsApp do responsável *", placeholder="(41) 99999-9999")
+
+    elif tipo_documento == TIPO_PJ_PEDIDO:
+        # ── Empresa e referência ao Termo Geral ─────────────────────────────
+        st.markdown("### 🏢 Empresa e Termo Geral já assinado")
+        col1, col2 = st.columns(2)
+        with col1:
+            razao_social = st.text_input("Razão social *")
+        with col2:
+            cnpj_empresa = st.text_input("CNPJ *", placeholder="00.000.000/0000-00")
+        data_termo_geral = st.date_input(
+            "Data em que o Termo de Intermediação Corporativo – Condições Gerais foi assinado *",
+            max_value=date.today())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            responsavel_nome  = st.text_input("Nome do responsável/solicitante *")
+            responsavel_email = st.text_input("E-mail do responsável *")
+        with col2:
+            responsavel_telefone = st.text_input("Telefone/WhatsApp do responsável *", placeholder="(41) 99999-9999")
+
+        st.divider()
+        st.markdown("### 🧍 Dados do Passageiro")
+        col1, col2 = st.columns(2)
+        with col1:
+            passageiro_nome = st.text_input("Nome completo do passageiro *")
+        with col2:
+            passageiro_cpf = st.text_input("CPF do passageiro *", placeholder="000.000.000-00")
+
+    else:
+        # ── Dados do Contratante ──────────────────────────────────────────
+        st.markdown("### 👤 Dados do Contratante")
+
+        nome = st.text_input("Nome completo *")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            nascimento = st.date_input(
+                "Data de Nascimento *",
+                value=date(1990, 1, 1),
+                min_value=date(1920, 1, 1),
+                max_value=date.today(),
+            )
+            cpf = st.text_input("CPF *", placeholder="000.000.000-00")
+        with col2:
+            rg = st.text_input("RG *")
+            celular = st.text_input("Celular/WhatsApp *", placeholder="(41) 99999-9999")
+
+        email      = st.text_input("E-mail *")
+        emergencia = st.text_input(
+            "Em caso de emergência avisar *",
+            placeholder="Nome e telefone do contato")
+
+    st.divider()
+
+    if tipo_documento == TIPO_EXCURSAO:
+        # ── Participantes adicionais ──────────────────────────────────────
+        st.markdown("### 👨‍👩‍👧‍👦 Participantes Adicionais")
+        st.caption("Se for uma família ou grupo, liste os demais participantes abaixo. O titular acima já está incluído automaticamente.")
+
+        num_extras = st.number_input(
+            "Quantos participantes adicionais? (além do titular)",
+            min_value=0, max_value=20, value=0, step=1)
+
+        participantes_extras = []
+        if num_extras > 0:
+            st.markdown("**Preencha os dados de cada participante:**")
+            for i in range(int(num_extras)):
+                st.markdown(f"*Participante {i+2}*")
+                col1, col2, col3 = st.columns([3, 2, 2])
+                with col1:
+                    p_nome = st.text_input("Nome", key=f"p_nome_{i}", placeholder="Nome completo")
+                with col2:
+                    p_tipo = st.selectbox("Tipo", ["Adulto", "Menor"], key=f"p_tipo_{i}")
+                with col3:
+                    p_idade = st.number_input("Idade", min_value=0, max_value=99, value=0, key=f"p_idade_{i}")
+                participantes_extras.append({
+                    "nome":  p_nome,
+                    "tipo":  p_tipo,
+                    "idade": p_idade,
+                })
+
+        st.divider()
+
+        # ── Dados da Excursão ───────────────────────────────────────────────
+        st.markdown("### 🗺️ Dados da Excursão")
+
+        destino     = st.text_input("Destino *", placeholder="ex: Bonito – MS")
+        data_viagem = st.date_input("Data da viagem *", min_value=date.today())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            valor_num = st.number_input(
+                "Valor do pacote (R$) *", min_value=0.0, step=0.01, format="%.2f")
+        with col2:
+            valor_extenso = st.text_input(
+                "Valor por extenso *",
+                placeholder="ex: quinhentos reais")
+
+        st.divider()
+
+        # ── Serviços Inclusos ───────────────────────────────────────────────
+        st.markdown("### ✅ Serviços Inclusos")
+        st.caption("Marque o que está incluso e adicione observações se necessário.")
+
+        servicos_lista = [
+            "Transporte (ônibus/van)",
+            "Café da manhã",
+            "Almoço",
+            "Jantar",
+            "Ingressos / Entradas",
+            "Guia turístico",
+            "Seguro de viagem",
+        ]
+
+        servicos_data = {}
+        for s in servicos_lista:
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                inc = st.checkbox(s, key=f"inc_{s}")
+            with col2:
+                obs = st.text_input(
+                    "Observação", key=f"obs_{s}",
+                    label_visibility="collapsed",
+                    placeholder=f"Observação sobre {s.lower()}")
+            servicos_data[s] = {"incluso": inc, "obs": obs}
+
+    elif tipo_documento == TIPO_PJ_GERAL:
+        # ── Forma de Pagamento (faturado, definida uma vez) ─────────────────
+        st.markdown("### 💳 Forma de Pagamento")
+        st.caption("Todos os Pedidos de Emissão feitos sob este Termo serão cobrados por fatura, nesta periodicidade.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            periodicidade_faturamento = st.selectbox(
+                "Periodicidade de faturamento *", ["15", "30"], index=1)
+        with col2:
+            prazo_faturamento = st.number_input(
+                "Prazo de vencimento da fatura (dias) *", min_value=1, max_value=90, value=15, step=1)
+
+    else:
+        # ── Dados da Passagem Aérea ─────────────────────────────────────────
+        st.markdown("### ✈️ Dados da Passagem Aérea")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            origem = st.text_input("Origem *", placeholder="ex: Curitiba (CWB)")
+        with col2:
+            destino_pass = st.text_input("Destino *", placeholder="ex: Maceió (MCZ)")
+
+        ida_volta = st.checkbox("Ida e volta", value=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            data_ida = st.date_input("Data de ida *", min_value=date.today())
+        with col2:
+            data_volta = st.date_input(
+                "Data de volta *", min_value=date.today()) if ida_volta else None
+
+        col1, col2 = st.columns(2)
+        with col1:
+            companhia = st.text_input("Companhia aérea *", placeholder="ex: Azul, LATAM, GOL")
+        with col2:
+            localizador = st.text_input("Localizador (se já emitido)", placeholder="opcional")
+
+        st.markdown("**Valores**")
+        col1, col2 = st.columns(2)
+        with col1:
+            valor_tarifa = st.number_input(
+                "Valor da tarifa aérea (R$) *", min_value=0.0, step=0.01, format="%.2f")
+        with col2:
+            valor_taxa = st.number_input(
+                "Taxa de serviço (R$) *", min_value=0.0, step=0.01, format="%.2f")
+
+        valor_extenso_pass = st.text_input(
+            "Valor total por extenso *",
+            placeholder="ex: dois mil quatrocentos e setenta e sete reais")
+
+        if tipo_documento == TIPO_PASSAGEM_PF:
+            forma_pagamento = st.selectbox(
+                "Forma de pagamento *",
+                ["Pix", "Transferência bancária", "Cartão de crédito", "Cartão de débito"])
+        # TIPO_PJ_PEDIDO não pergunta forma de pagamento aqui — já está
+        # definida no Termo de Intermediação Corporativo – Condições Gerais.
 
     st.divider()
 
@@ -924,15 +1667,16 @@ with st.form("contrato_form"):
     st.divider()
 
     # ── Envio Autentique (opcional) ───────────────────────────────────────
+    api_token    = ""
+    via_whatsapp = False
+    modo_sandbox = True  # ← SANDBOX ATIVO: troque para False quando quiser cobrar
+
     st.markdown("### ✍️ Assinatura Digital")
     usar_autentique = st.checkbox(
         "📲 Enviar para o cliente assinar pelo WhatsApp/e-mail (Autentique)",
         value=True
     )
 
-    api_token    = ""
-    via_whatsapp = False
-    modo_sandbox = True  # ← SANDBOX ATIVO: troque para False quando quiser cobrar
     if usar_autentique:
         if AUTENTIQUE_TOKEN_ENV:
             st.success("🔑 Token Autentique carregado automaticamente")
@@ -965,57 +1709,233 @@ with st.form("contrato_form"):
 
     st.divider()
 
+    _labels_botao = {
+        TIPO_EXCURSAO:    "📄 Gerar Contrato PDF",
+        TIPO_PASSAGEM_PF: "📄 Gerar Termo PDF",
+        TIPO_PJ_GERAL:    "📄 Gerar Termo Geral PDF",
+        TIPO_PJ_PEDIDO:   "📄 Gerar Pedido de Emissão PDF",
+    }
     submitted = st.form_submit_button(
-        "📄 Gerar Contrato PDF",
+        _labels_botao[tipo_documento],
         type="primary",
         use_container_width=True,
     )
 
 # ── Validação e Geração ───────────────────────────────────────────────────────
 if submitted:
-    erros = []
-    if not nome.strip():            erros.append("Nome completo")
-    if not cpf.strip():             erros.append("CPF")
-    if not rg.strip():              erros.append("RG")
-    if not celular.strip():         erros.append("Celular/WhatsApp")
-    if not email.strip():           erros.append("E-mail")
-    if not emergencia.strip():      erros.append("Contato de emergência")
-    if not destino.strip():         erros.append("Destino")
-    if valor_num <= 0:              erros.append("Valor do pacote")
-    if not valor_extenso.strip():   erros.append("Valor por extenso")
+    pdf_bytes     = None
+    nome_arquivo  = None
+    _labels_doc = {
+        TIPO_EXCURSAO:    "Contrato",
+        TIPO_PASSAGEM_PF: "Termo",
+        TIPO_PJ_GERAL:    "Termo Geral",
+        TIPO_PJ_PEDIDO:   "Pedido de Emissão",
+    }
+    label_doc     = _labels_doc[tipo_documento]
+    mensagem_intro = "Segue o contrato da sua excursão com a Rota Contigo."
 
-    if erros:
-        st.error("⚠️ Preencha os campos obrigatórios: " + ", ".join(erros))
-    else:
-        with st.spinner("Gerando contrato, aguarde..."):
-            dados = {
-                "nome":          nome.strip(),
-                "nascimento":    nascimento,
-                "cpf":           cpf.strip(),
-                "rg":            rg.strip(),
-                "celular":       celular.strip(),
-                "email":         email.strip(),
-                "emergencia":    emergencia.strip(),
-                "destino":       destino.strip(),
-                "data_viagem":   data_viagem,
-                "valor_fmt":     fmt_valor(valor_num),
-                "valor_extenso": valor_extenso.strip(),
-                "servicos":             servicos_data,
-                "data_contrato":        data_contrato,
-                "participantes_extras": participantes_extras,
-            }
-            pdf_bytes = gerar_pdf(dados)
+    if tipo_documento == TIPO_EXCURSAO:
+        erros = []
+        if not nome.strip():            erros.append("Nome completo")
+        if not cpf.strip():             erros.append("CPF")
+        if not rg.strip():              erros.append("RG")
+        if not celular.strip():         erros.append("Celular/WhatsApp")
+        if not email.strip():           erros.append("E-mail")
+        if not emergencia.strip():      erros.append("Contato de emergência")
+        if not destino.strip():         erros.append("Destino")
+        if valor_num <= 0:              erros.append("Valor do pacote")
+        if not valor_extenso.strip():   erros.append("Valor por extenso")
 
-        st.success("✅ Contrato gerado com sucesso!")
+        if erros:
+            st.error("⚠️ Preencha os campos obrigatórios: " + ", ".join(erros))
+        else:
+            with st.spinner("Gerando contrato, aguarde..."):
+                dados = {
+                    "nome":          nome.strip(),
+                    "nascimento":    nascimento,
+                    "cpf":           cpf.strip(),
+                    "rg":            rg.strip(),
+                    "celular":       celular.strip(),
+                    "email":         email.strip(),
+                    "emergencia":    emergencia.strip(),
+                    "destino":       destino.strip(),
+                    "data_viagem":   data_viagem,
+                    "valor_fmt":     fmt_valor(valor_num),
+                    "valor_extenso": valor_extenso.strip(),
+                    "servicos":             servicos_data,
+                    "data_contrato":        data_contrato,
+                    "participantes_extras": participantes_extras,
+                }
+                pdf_bytes = gerar_pdf(dados)
 
-        nome_arquivo = (
-            f"Contrato_RotaContigo"
-            f"_{nome.split()[0]}"
-            f"_{destino.replace(' ', '_').replace('–','-')}"
-            f"_{fmt_data(data_viagem).replace('/','')}.pdf"
-        )
+            nome_arquivo = (
+                f"Contrato_RotaContigo"
+                f"_{nome.split()[0]}"
+                f"_{destino.replace(' ', '_').replace('–','-')}"
+                f"_{fmt_data(data_viagem).replace('/','')}.pdf"
+            )
+            mensagem_intro = "Segue o contrato da sua excursão com a Rota Contigo."
+            nome_cliente_aut     = nome.strip()
+            email_cliente_aut    = email.strip()
+            telefone_cliente_aut = celular.strip()
+
+    elif tipo_documento == TIPO_PASSAGEM_PF:
+        erros = []
+        if not nome.strip():               erros.append("Nome completo")
+        if not cpf.strip():                erros.append("CPF")
+        if not rg.strip():                 erros.append("RG")
+        if not celular.strip():            erros.append("Celular/WhatsApp")
+        if not email.strip():              erros.append("E-mail")
+        if not emergencia.strip():         erros.append("Contato de emergência")
+        if not origem.strip():             erros.append("Origem")
+        if not destino_pass.strip():       erros.append("Destino")
+        if not companhia.strip():          erros.append("Companhia aérea")
+        if valor_tarifa <= 0:              erros.append("Valor da tarifa aérea")
+        if not valor_extenso_pass.strip(): erros.append("Valor total por extenso")
+        if ida_volta and data_volta is None: erros.append("Data de volta")
+
+        if erros:
+            st.error("⚠️ Preencha os campos obrigatórios: " + ", ".join(erros))
+        else:
+            with st.spinner("Gerando termo, aguarde..."):
+                valor_total = valor_tarifa + valor_taxa
+                dados = {
+                    "nome":          nome.strip(),
+                    "nascimento":    nascimento,
+                    "cpf":           cpf.strip(),
+                    "rg":            rg.strip(),
+                    "celular":       celular.strip(),
+                    "email":         email.strip(),
+                    "emergencia":    emergencia.strip(),
+                    "origem":        origem.strip(),
+                    "destino":       destino_pass.strip(),
+                    "data_ida":      data_ida,
+                    "ida_e_volta":   ida_volta,
+                    "data_volta":    data_volta,
+                    "companhia":     companhia.strip(),
+                    "localizador":   localizador.strip(),
+                    "valor_tarifa_fmt": fmt_valor(valor_tarifa),
+                    "valor_taxa_fmt":   fmt_valor(valor_taxa),
+                    "valor_total_fmt":  fmt_valor(valor_total),
+                    "valor_extenso":    valor_extenso_pass.strip(),
+                    "forma_pagamento":  forma_pagamento,
+                    "data_contrato":    data_contrato,
+                }
+                pdf_bytes = gerar_pdf_passagem(dados)
+
+            nome_arquivo = (
+                f"Termo_Intermediacao_RotaContigo"
+                f"_{nome.split()[0]}"
+                f"_{destino_pass.replace(' ', '_').replace('–','-')}"
+                f"_{fmt_data(data_ida).replace('/','')}.pdf"
+            )
+            mensagem_intro = "Segue o termo de intermediação da sua passagem aérea com a Rota Contigo."
+            nome_cliente_aut     = nome.strip()
+            email_cliente_aut    = email.strip()
+            telefone_cliente_aut = celular.strip()
+
+    elif tipo_documento == TIPO_PJ_GERAL:
+        erros = []
+        if not razao_social.strip():         erros.append("Razão social")
+        if not cnpj_empresa.strip():         erros.append("CNPJ")
+        if not endereco_empresa.strip():     erros.append("Endereço da empresa")
+        if not responsavel_nome.strip():     erros.append("Nome do responsável")
+        if not responsavel_cargo.strip():    erros.append("Cargo do responsável")
+        if not responsavel_email.strip():    erros.append("E-mail do responsável")
+        if not responsavel_telefone.strip(): erros.append("Telefone do responsável")
+
+        if erros:
+            st.error("⚠️ Preencha os campos obrigatórios: " + ", ".join(erros))
+        else:
+            with st.spinner("Gerando termo geral, aguarde..."):
+                dados = {
+                    "razao_social":         razao_social.strip(),
+                    "cnpj_empresa":         cnpj_empresa.strip(),
+                    "endereco_empresa":     endereco_empresa.strip(),
+                    "responsavel_nome":     responsavel_nome.strip(),
+                    "responsavel_cargo":    responsavel_cargo.strip(),
+                    "responsavel_email":    responsavel_email.strip(),
+                    "responsavel_telefone": responsavel_telefone.strip(),
+                    "periodicidade_faturamento": periodicidade_faturamento,
+                    "prazo_faturamento":         prazo_faturamento,
+                    "data_contrato":             data_contrato,
+                }
+                pdf_bytes = gerar_pdf_corporativo_geral(dados)
+
+            nome_arquivo = (
+                f"Termo_Corporativo_Geral_RotaContigo"
+                f"_{razao_social.split()[0]}"
+                f"_{fmt_data(data_contrato).replace('/','')}.pdf"
+            )
+            mensagem_intro = (
+                f"Segue o Termo de Intermediação Corporativo – Condições Gerais da "
+                f"{razao_social.strip()} com a Rota Contigo."
+            )
+            nome_cliente_aut     = responsavel_nome.strip()
+            email_cliente_aut    = responsavel_email.strip()
+            telefone_cliente_aut = responsavel_telefone.strip()
+
+    else:  # TIPO_PJ_PEDIDO
+        erros = []
+        if not razao_social.strip():         erros.append("Razão social")
+        if not cnpj_empresa.strip():         erros.append("CNPJ")
+        if not responsavel_nome.strip():     erros.append("Nome do responsável")
+        if not responsavel_email.strip():    erros.append("E-mail do responsável")
+        if not responsavel_telefone.strip(): erros.append("Telefone do responsável")
+        if not passageiro_nome.strip():      erros.append("Nome do passageiro")
+        if not passageiro_cpf.strip():       erros.append("CPF do passageiro")
+        if not origem.strip():               erros.append("Origem")
+        if not destino_pass.strip():         erros.append("Destino")
+        if not companhia.strip():            erros.append("Companhia aérea")
+        if valor_tarifa <= 0:                erros.append("Valor da tarifa aérea")
+        if not valor_extenso_pass.strip():   erros.append("Valor total por extenso")
+        if ida_volta and data_volta is None: erros.append("Data de volta")
+
+        if erros:
+            st.error("⚠️ Preencha os campos obrigatórios: " + ", ".join(erros))
+        else:
+            with st.spinner("Gerando pedido de emissão, aguarde..."):
+                valor_total = valor_tarifa + valor_taxa
+                dados = {
+                    "data_termo_geral": data_termo_geral,
+                    "razao_social":     razao_social.strip(),
+                    "cnpj_empresa":     cnpj_empresa.strip(),
+                    "passageiro_nome":  passageiro_nome.strip(),
+                    "passageiro_cpf":   passageiro_cpf.strip(),
+                    "origem":        origem.strip(),
+                    "destino":       destino_pass.strip(),
+                    "data_ida":      data_ida,
+                    "ida_e_volta":   ida_volta,
+                    "data_volta":    data_volta,
+                    "companhia":     companhia.strip(),
+                    "localizador":   localizador.strip(),
+                    "valor_tarifa_fmt": fmt_valor(valor_tarifa),
+                    "valor_taxa_fmt":   fmt_valor(valor_taxa),
+                    "valor_total_fmt":  fmt_valor(valor_total),
+                    "valor_extenso":    valor_extenso_pass.strip(),
+                    "data_pedido":      data_contrato,
+                }
+                pdf_bytes = gerar_pdf_pedido_emissao(dados)
+
+            nome_arquivo = (
+                f"Pedido_Emissao_RotaContigo"
+                f"_{razao_social.split()[0]}"
+                f"_{passageiro_nome.split()[0]}"
+                f"_{fmt_data(data_ida).replace('/','')}.pdf"
+            )
+            mensagem_intro = (
+                f"Segue o pedido de emissão da passagem aérea de "
+                f"{passageiro_nome.strip()} para a {razao_social.strip()} com a Rota Contigo."
+            )
+            nome_cliente_aut     = responsavel_nome.strip()
+            email_cliente_aut    = responsavel_email.strip()
+            telefone_cliente_aut = responsavel_telefone.strip()
+
+    if pdf_bytes:
+        st.success(f"✅ {label_doc} gerado com sucesso!")
+
         st.download_button(
-            label="⬇️ Baixar Contrato PDF",
+            label=f"⬇️ Baixar {label_doc} PDF",
             data=pdf_bytes,
             file_name=nome_arquivo,
             mime="application/pdf",
@@ -1031,14 +1951,15 @@ if submitted:
                     try:
                         resultado = enviar_autentique(
                             pdf_bytes        = pdf_bytes,
-                            nome_cliente     = nome.strip(),
-                            email_cliente    = email.strip(),
-                            telefone_cliente = celular.strip(),
+                            nome_cliente     = nome_cliente_aut,
+                            email_cliente    = email_cliente_aut,
+                            telefone_cliente = telefone_cliente_aut,
                             nome_arquivo     = nome_arquivo,
                             api_token        = api_token.strip(),
                             via_whatsapp     = enviar_whatsapp,
                             via_email        = enviar_email,
                             sandbox          = modo_sandbox,
+                            mensagem_intro   = mensagem_intro,
                         )
 
                         if "errors" in resultado:
@@ -1047,7 +1968,7 @@ if submitted:
                             doc_id = resultado["data"]["createDocument"]["id"]
                             sigs   = resultado["data"]["createDocument"]["signatures"]
 
-                            st.success("✅ Contrato enviado para assinatura!")
+                            st.success(f"✅ {label_doc} enviado para assinatura!")
                             st.markdown("---")
                             st.markdown("**📋 Links de assinatura:**")
 
@@ -1055,7 +1976,7 @@ if submitted:
                                 link_obj = s.get("link") or {}
                                 link = link_obj.get("short_link", "")
                                 if link:
-                                    eh_cliente = s.get("email", "") == email.strip()
+                                    eh_cliente = s.get("email", "") == email_cliente_aut
                                     if eh_cliente and enviar_whatsapp:
                                         metodo = "📱 WhatsApp"
                                     elif eh_cliente:
